@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}ورود — نوبت{% endblock %}
+{% block content %}
+<div class="login">
+  <img src="/static/icons/icon-192.png" alt="" class="login-icon">
+  <h1>پنل نوبت</h1>
+  <form method="post" action="/login" class="card form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>نام کاربری
+      <input name="username" autocomplete="username" autocapitalize="none" dir="ltr" required autofocus>
+    </label>
+    <label>رمز عبور
+      <input name="password" type="password" autocomplete="current-password" dir="ltr" required>
+    </label>
+    <button class="btn primary wide">ورود</button>
+  </form>
+</div>
+{% endblock %}

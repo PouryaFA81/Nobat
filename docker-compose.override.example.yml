@@ -1,0 +1,19 @@
+# Use this only if your reverse proxy (e.g. Caddy) runs in a Docker container.
+#
+# 1. Copy it:            cp docker-compose.override.example.yml docker-compose.override.yml
+# 2. Replace "proxy" below with the Docker network your reverse proxy is on
+#    (find it with: docker inspect <proxy-container> --format '{{json .NetworkSettings.Networks}}')
+# 3. In your reverse proxy, use  nobat:8000  and  nobat-ntfy:80  as upstreams.
+#
+# Docker Compose reads docker-compose.override.yml automatically.
+
+services:
+  nobat:
+    networks: [default, proxy]
+  ntfy:
+    networks: [default, proxy]
+
+networks:
+  proxy:
+    external: true
+    name: proxy

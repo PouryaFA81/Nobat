@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+{% set dq = ("&doctor=" ~ doctor_id) if doctor_id else "" %}
+<div class="bar">
+  <a class="btn" href="/calendar?m={{ prev_m }}{{ dq }}" aria-label="ماه قبل">›</a>
+  <h1 class="month">{{ MONTHS[jm - 1] }} {{ jy|fa }}</h1>
+  <a class="btn" href="/calendar?m={{ next_m }}{{ dq }}" aria-label="ماه بعد">‹</a>
+  <a class="btn ghost" href="/calendar?m={{ this_m }}{{ dq }}">امروز</a>
+</div>
+
+<form method="get" action="/calendar" class="filter">
+  <input type="hidden" name="m" value="{{ jy }}-{{ '%02d' % jm }}">
+  <select name="doctor" data-autosubmit aria-label="{{ STAFF }}">
+    <option value="">همه‌ی {{ STAFF_PL }}</option>
+    {% for d in docs %}<option value="{{ d.id }}" {% if doctor_id == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+  </select>
+  <noscript><button class="btn">نمایش</button></noscript>
+</form>
+
+<table class="cal">
+  <thead><tr>{% for h in header %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for week in weeks %}
+    <tr>
+    {% for c in week %}
+      {% if c %}
+      <td class="{% if c.today %}today{% endif %} {% if c.friday %}fri{% endif %}">
+        <a href="/day/{{ c.j }}{{ ('?doctor=' ~ doctor_id) if doctor_id else '' }}">
+          <span class="dn">{{ c.jd|fa }}</span>
+          {% if c.count %}<span class="count">{{ c.count|fa }}</span>{% endif %}
+        </a>
+      </td>
+      {% else %}<td class="empty"></td>{% endif %}
+    {% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="hint">عدد سبز = تعداد نوبت‌های فعال آن روز. روی هر روز بزنید تا نوبت‌ها را ببینید یا نوبت اضافه کنید.</p>
+{% endblock %}

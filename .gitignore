@@ -1,0 +1,21 @@
+# Secrets and live data — never commit these
+.env
+data/
+ntfy/data/
+ntfy/cache/
+docker-compose.override.yml
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+backup.log

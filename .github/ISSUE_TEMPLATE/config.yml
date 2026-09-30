@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "🔒 Report a security problem / گزارش مشکل امنیتی"
+    url: https://github.com/PouryaFA81/Nobat/security/advisories/new
+    about: Please report security problems privately. / لطفاً مشکلات امنیتی را خصوصی گزارش دهید.
+  - name: "📖 Installation guide / راهنمای نصب"
+    url: https://github.com/PouryaFA81/Nobat/blob/main/docs/INSTALL.md
+    about: Step-by-step setup and troubleshooting. / نصب مرحله‌به‌مرحله و رفع اشکال.

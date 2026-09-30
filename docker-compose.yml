@@ -1,0 +1,31 @@
+# Nobat: the panel + its own ntfy notification server.
+# Both are published only on 127.0.0.1, for a reverse proxy (Caddy, nginx...)
+# running on the same machine. If your reverse proxy runs in Docker, see
+# docker-compose.override.example.yml instead.
+
+services:
+  nobat:
+    build: .
+    image: nobat:local
+    container_name: nobat
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NTFY_URL: http://nobat-ntfy:80
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on: [ntfy]
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.28.0
+    container_name: nobat-ntfy
+    restart: unless-stopped
+    command: serve
+    volumes:
+      - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ./ntfy/data:/var/lib/ntfy
+      - ./ntfy/cache:/var/cache/ntfy
+    ports:
+      - "127.0.0.1:8080:80"

@@ -1,0 +1,21 @@
+# ntfy server for the Nobat panel.
+# Docs: https://docs.ntfy.sh/config/
+
+# Change this to your notification address (same as NTFY_PUBLIC_URL in .env).
+base-url: "https://ntfy.example.com"
+listen-http: ":80"
+behind-proxy: true
+
+# Keep messages for 12 hours, so a phone that was offline still gets them.
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "12h"
+
+# Nobody can read or send anything unless allowed (docs/INSTALL.md, step 7).
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "deny-all"
+
+# iPhone only: iOS cannot keep a live connection to a self-hosted server, so
+# notifications may arrive late. Uncommenting the line below makes them instant:
+# ntfy.sh then receives only a "wake up" signal with a hashed topic and message ID,
+# never the text. Leave it commented unless someone uses an iPhone.
+# upstream-base-url: "https://ntfy.sh"

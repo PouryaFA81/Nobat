@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+{% set dq = ("?doctor=" ~ doctor_id) if doctor_id else "" %}
+<div class="bar">
+  <a class="btn" href="/day/{{ prev }}{{ dq }}" aria-label="روز قبل">›</a>
+  <h1 class="month">{{ d|long_date }}</h1>
+  <a class="btn" href="/day/{{ next }}{{ dq }}" aria-label="روز بعد">‹</a>
+</div>
+<div class="actions">
+  <a class="btn primary" href="/appointments/new?day={{ j }}{{ ('&doctor=' ~ doctor_id) if doctor_id else '' }}">+ نوبت جدید در این روز</a>
+  <a class="btn ghost" href="/calendar?m={{ j[:7] }}{{ ('&doctor=' ~ doctor_id) if doctor_id else '' }}">بازگشت به تقویم</a>
+</div>
+
+{% if doctor_id %}<p class="hint">فقط نوبت‌های یک {{ STAFF }} نمایش داده می‌شود. <a href="/day/{{ j }}">نمایش همه</a></p>{% endif %}
+
+{% if rows %}
+<ul class="appts">
+  {% for a in rows %}
+  <li class="appt {% if a.status == 'cancelled' %}cancelled{% endif %}">
+    <div class="appt-time">{{ a.start_time|fa }}<small>{{ a.duration_min|fa }} دقیقه</small></div>
+    <div class="appt-body">
+      <div class="appt-title">{{ a.initials }} <span class="who">— {{ a.doctor_name }}</span>
+        {% if a.status == 'cancelled' %}<span class="tag">لغو شده</span>{% endif %}</div>
+      {% if a.description %}<div class="desc">{{ a.description }}</div>{% endif %}
+    </div>
+    <div class="appt-actions">
+      <a class="btn small" href="/appointments/{{ a.id }}/edit">{{ 'فعال‌سازی دوباره' if a.status == 'cancelled' else 'ویرایش / جابه‌جایی' }}</a>
+      {% if a.status == 'active' %}
+      <form method="post" action="/appointments/{{ a.id }}/cancel" data-confirm="این نوبت لغو شود؟ به {{ STAFF }} اطلاع داده می‌شود.">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn small danger">لغو</button>
+      </form>
+      {% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty-state">در این روز نوبتی ثبت نشده است.</p>
+{% endif %}
+{% endblock %}

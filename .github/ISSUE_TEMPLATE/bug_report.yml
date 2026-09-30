@@ -1,0 +1,52 @@
+name: "🐞 Bug report / گزارش خطا"
+description: Something doesn't work as expected. / چیزی درست کار نمی‌کند.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! You can write in English or Persian.
+        ⚠️ **Never include real client data** (names, initials, notes) in this report or in screenshots.
+        For security problems, use the Security tab instead (see SECURITY.md).
+
+        ممنون از گزارش شما! می‌توانید فارسی یا انگلیسی بنویسید.
+        ⚠️ **هیچ‌وقت اطلاعات واقعی مراجعان** را در گزارش یا اسکرین‌شات قرار ندهید.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? / چه اتفاقی افتاد؟
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / مراحل تکرار خطا
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See error
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Nobat version / نسخه
+      description: Shown in the footer of the panel. / در پایین صفحه‌ی پنل نوشته شده است.
+      placeholder: "1.0.0"
+  - type: dropdown
+    id: device
+    attributes:
+      label: Where does it happen? / روی چه دستگاهی؟
+      multiple: true
+      options:
+        - Android phone
+        - iPhone
+        - Computer browser
+        - Server / installation
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / لاگ‌ها
+      description: "Output of: docker compose logs --tail 50 nobat (remove anything private first)"
+      render: text

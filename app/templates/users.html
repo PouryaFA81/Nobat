@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="bar"><h1 class="month">همکاران</h1></div>
+<div class="actions"><a class="btn primary" href="/users/new">+ همکار جدید</a></div>
+<ul class="list card">
+  {% for u in rows %}
+  <li class="{% if not u.active %}muted{% endif %}">
+    <a href="/users/{{ u.id }}/edit">
+      <strong>{{ u.name }}</strong>
+      <span class="sub" dir="ltr">{{ u.username }}</span>
+      {% if u.is_admin %}<span class="tag green">مدیر نوبت‌دهی</span>{% endif %}
+      {% if not u.is_doctor %}<span class="tag">بدون نوبت</span>{% endif %}
+      {% if not u.active %}<span class="tag">غیرفعال</span>{% endif %}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

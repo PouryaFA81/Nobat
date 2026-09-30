@@ -1,0 +1,30 @@
+name: "💡 Feature request / پیشنهاد قابلیت"
+description: Suggest an idea or improvement. / یک ایده یا بهبود پیشنهاد دهید.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Nobat is deliberately small and simple. Explaining the real problem behind your idea helps a lot.
+        You can write in English or Persian.
+
+        «نوبت» عمداً ساده نگه داشته شده است. توضیح مشکل واقعی پشت ایده‌تان خیلی کمک می‌کند.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve? / این قابلیت چه مشکلی را حل می‌کند؟
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea / ایده‌ی شما
+      description: How would it work for the coordinator or the staff? / برای هماهنگ‌کننده یا همکاران چطور کار کند؟
+    validations:
+      required: true
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Can you help? / می‌توانید کمک کنید؟
+      options:
+        - label: I'd like to work on this myself. / دوست دارم خودم رویش کار کنم.

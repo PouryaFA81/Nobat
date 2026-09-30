@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+{% if appt and appt.status == 'cancelled' %}<p class="hint">این نوبت لغو شده است. با ذخیره، دوباره فعال می‌شود و به {{ STAFF }} اطلاع داده می‌شود.</p>{% endif %}
+<form method="post" action="{{ action }}" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+
+  <label>{{ STAFF }}
+    <select name="doctor_id" required>
+      <option value="">— انتخاب کنید —</option>
+      {% for d in docs %}<option value="{{ d.id }}" {% if v.doctor_id|string == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+    </select>
+  </label>
+
+  <label>حروف اول نام مراجع
+    <input name="initials" value="{{ v.initials }}" maxlength="30" required placeholder="مثلاً ع.م">
+  </label>
+
+  <fieldset>
+    <legend>تاریخ</legend>
+    <div class="row3">
+      <select name="jd" aria-label="روز">
+        {% for i in range(1, 32) %}<option value="{{ i }}" {% if v.jd|string == i|string %}selected{% endif %}>{{ i|fa }}</option>{% endfor %}
+      </select>
+      <select name="jm" aria-label="ماه">
+        {% for m in MONTHS %}<option value="{{ loop.index }}" {% if v.jm|string == loop.index|string %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+      <select name="jy" aria-label="سال">
+        {% for y in years %}<option value="{{ y }}" {% if v.jy|string == y|string %}selected{% endif %}>{{ y|fa }}</option>{% endfor %}
+      </select>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>ساعت و مدت</legend>
+    <div class="row3 time" dir="ltr">
+      <select name="hour" aria-label="ساعت">
+        {% for h in hours %}<option value="{{ h }}" {% if v.hour|string == h|string %}selected{% endif %}>{{ ('%02d' % h)|fa }}</option>{% endfor %}
+      </select>
+      <span class="colon">:</span>
+      <select name="minute" aria-label="دقیقه">
+        {% for m in minutes %}<option value="{{ m }}" {% if v.minute|string == m|string %}selected{% endif %}>{{ ('%02d' % m)|fa }}</option>{% endfor %}
+      </select>
+    </div>
+    <select name="duration" aria-label="مدت جلسه">
+      {% for d in durations %}<option value="{{ d }}" {% if v.duration|string == d|string %}selected{% endif %}>{{ d|fa }} دقیقه</option>{% endfor %}
+    </select>
+  </fieldset>
+
+  <label>توضیحات <small>(فقط شما و {{ STAFF }} همین نوبت می‌بینید؛ در اعلان فرستاده نمی‌شود)</small>
+    <textarea name="description" rows="3" maxlength="1000">{{ v.description }}</textarea>
+  </label>
+
+  <div class="form-actions">
+    <button class="btn primary">ذخیره</button>
+    <a class="btn ghost" href="{{ ('/day/' ~ (appt.day|jstr)) if appt else '/calendar' }}">انصراف</a>
+  </div>
+</form>
+{% endblock %}

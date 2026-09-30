@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="bar">
+  <h1 class="month">{{ 'نوبت‌های ۳۰ روز گذشته' if past else 'نوبت‌های پیش رو' }}</h1>
+</div>
+<div class="actions">
+  {% if past %}<a class="btn ghost" href="/me">نوبت‌های پیش رو</a>
+  {% else %}<a class="btn ghost" href="/me?past=1">نوبت‌های گذشته</a>{% endif %}
+</div>
+
+{% if groups %}
+  {% for day, items in groups %}
+  <section class="daygroup">
+    <h2>{{ day|long_date }}
+      {% if day == today %}<span class="tag green">امروز</span>{% elif day == tomorrow %}<span class="tag">فردا</span>{% endif %}
+    </h2>
+    <ul class="appts">
+      {% for a in items %}
+      <li class="appt {% if a.status == 'cancelled' %}cancelled{% endif %}">
+        <div class="appt-time">{{ a.start_time|fa }}<small>{{ a.duration_min|fa }} دقیقه</small></div>
+        <div class="appt-body">
+          <div class="appt-title">{{ a.initials }}
+            {% if a.status == 'cancelled' %}<span class="tag">لغو شده</span>{% endif %}</div>
+          {% if a.description %}<div class="desc">{{ a.description }}</div>{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+{% else %}
+  <p class="empty-state">{{ 'نوبتی در ۳۰ روز گذشته نبود.' if past else 'فعلاً نوبتی برای شما ثبت نشده است.' }}</p>
+{% endif %}
+{% endblock %}

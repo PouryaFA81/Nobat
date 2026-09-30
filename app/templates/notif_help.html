@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>تنظیم اعلان‌ها روی گوشی</h1>
+{% if not user.is_doctor %}
+<p class="card">حساب شما نوبت نمی‌گیرد، پس اعلانی برایتان فرستاده نمی‌شود.</p>
+{% else %}
+<ol class="steps card">
+  <li>برنامه‌ی <strong>ntfy</strong> را نصب کنید (اندروید: F-Droid یا Google Play — آیفون: App Store).</li>
+  <li>در برنامه، دکمه‌ی <strong>+</strong> را بزنید.</li>
+  <li>در قسمت Topic این را وارد کنید:
+    <div class="copyrow" dir="ltr"><code>{{ topic }}</code> <button class="btn small" data-copy="{{ topic }}">کپی</button></div>
+  </li>
+  <li>گزینه‌ی <strong>Use another server</strong> را روشن کنید و این آدرس را وارد کنید:
+    <div class="copyrow" dir="ltr"><code>{{ ntfy_public }}</code> <button class="btn small" data-copy="{{ ntfy_public }}">کپی</button></div>
+  </li>
+  <li><strong>Subscribe</strong> را بزنید.</li>
+  <li>دکمه‌ی زیر را بزنید؛ باید چند ثانیه بعد یک اعلان روی گوشی بیاید.</li>
+</ol>
+<form method="post" action="/notifications/test" class="actions">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <button class="btn primary">ارسال اعلان آزمایشی</button>
+</form>
+
+<section class="card info">
+  <h2>چه اعلان‌هایی می‌آید؟</h2>
+  <ul>
+    <li>وقتی برای شما نوبت ثبت شود</li>
+    <li>وقتی نوبت شما جابه‌جا یا لغو شود</li>
+    <li>عصرِ روز قبل، فهرست جلسه‌های فردا</li>
+  </ul>
+  <p class="hint">در اعلان فقط حروف اول نام مراجع و زمان می‌آید. توضیحات فقط داخل پنل دیده می‌شود.
+  موضوع بالا را به کسی ندهید.</p>
+</section>
+
+<section class="card info">
+  <h2>نصب پنل روی صفحه‌ی اصلی گوشی</h2>
+  <ul>
+    <li>اندروید (Chrome): منوی ⋮ ← «Add to Home screen» یا «Install app»</li>
+    <li>آیفون (Safari): دکمه‌ی اشتراک‌گذاری ← «Add to Home Screen»</li>
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

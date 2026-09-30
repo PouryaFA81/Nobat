@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ u.name if u else 'همکار جدید' }}</h1>
+<form method="post" action="{{ ('/users/' ~ u.id ~ '/edit') if u else '/users/new' }}" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>نام (نمایش در پنل)
+    <input name="name" value="{{ v.name }}" required maxlength="80" placeholder="مثلاً دکتر احمدی">
+  </label>
+  {% if u %}
+    <label>نام کاربری <input value="{{ u.username }}" dir="ltr" disabled></label>
+    <label>رمز عبور جدید <small>(خالی بگذارید تا تغییر نکند)</small>
+      <input name="password" type="password" autocomplete="new-password" dir="ltr" minlength="8">
+    </label>
+  {% else %}
+    <label>نام کاربری <small>(حروف انگلیسی و عدد)</small>
+      <input name="username" value="{{ v.username }}" dir="ltr" required autocapitalize="none" maxlength="40">
+    </label>
+    <label>رمز عبور <small>(حداقل ۸ کاراکتر)</small>
+      <input name="password" type="password" autocomplete="new-password" dir="ltr" required minlength="8">
+    </label>
+  {% endif %}
+  <label class="check"><input type="checkbox" name="is_doctor" value="1" {% if v.is_doctor %}checked{% endif %}> نوبت می‌گیرد ({{ STAFF }})</label>
+  <label class="check"><input type="checkbox" name="is_admin" value="1" {% if v.is_admin %}checked{% endif %}> مدیر نوبت‌دهی (ثبت و ویرایش همه‌ی نوبت‌ها)</label>
+  {% if u %}
+  <label class="check"><input type="checkbox" name="active" value="1" {% if v.active %}checked{% endif %}> حساب فعال است</label>
+  {% else %}<input type="hidden" name="active" value="1">{% endif %}
+  <div class="form-actions">
+    <button class="btn primary">ذخیره</button>
+    <a class="btn ghost" href="/users">بازگشت</a>
+  </div>
+</form>
+
+{% if u and u.is_doctor %}
+<section class="card info">
+  <h2>اطلاعات اعلان این همکار</h2>
+  <p>این دو مورد را در برنامه‌ی ntfy روی گوشی او وارد کنید (یا بعد از ورود، خودش از منوی «تنظیم اعلان‌ها» می‌بیند):</p>
+  <dl>
+    <dt>سرور</dt><dd dir="ltr"><code>{{ ntfy_public or '(NTFY_PUBLIC_URL تنظیم نشده)' }}</code></dd>
+    <dt>موضوع (Topic)</dt><dd dir="ltr"><code>{{ u.ntfy_topic }}</code> <button class="btn small" data-copy="{{ u.ntfy_topic }}">کپی</button></dd>
+  </dl>
+  <p class="hint">این موضوع را فقط به خود او بدهید؛ هر کسی آن را داشته باشد اعلان‌هایش را می‌بیند.</p>
+</section>
+{% endif %}
+
+{% if u and u.id != user.id %}
+<section class="card danger-zone">
+  <h2>حذف این همکار</h2>
+  <p class="hint">حساب او و {{ (n_appts or 0)|fa }} نوبتِ ثبت‌شده برایش برای همیشه پاک می‌شود. اگر فقط می‌خواهید دیگر وارد نشود، تیک «حساب فعال است» را بردارید.</p>
+  <form method="post" action="/users/{{ u.id }}/delete" data-confirm="{{ u.name }} و همه‌ی نوبت‌هایش برای همیشه حذف شود؟ این کار برگشت‌پذیر نیست.">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="btn danger">حذف همیشگی</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

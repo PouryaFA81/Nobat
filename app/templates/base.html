@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f6f6a">
+<meta name="robots" content="noindex, nofollow">
+<title>{% block title %}نوبت{% endblock %}</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="نوبت">
+<link rel="stylesheet" href="/static/style.css?v=3">
+<script src="/static/app.js?v=2" defer></script>
+</head>
+<body>
+{% if user %}
+<header class="top">
+  <a class="brand" href="/">نوبت</a>
+  <nav>
+    {% if user.is_admin %}
+      <a href="/calendar">تقویم</a>
+      <a href="/appointments/new">+ نوبت</a>
+      <a href="/users">همکاران</a>
+    {% endif %}
+    {% if user.is_doctor %}<a href="/me">برنامه من</a>{% endif %}
+    <details class="menu">
+      <summary>{{ user.name }}</summary>
+      <div class="menu-body">
+        <a href="/notifications">تنظیم اعلان‌ها</a>
+        <a href="/password">تغییر رمز</a>
+        <form method="post" action="/logout">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="link">خروج</button>
+        </form>
+      </div>
+    </details>
+  </nav>
+</header>
+{% endif %}
+<main>
+  {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="foot">
+  <a href="{{ SOURCE_URL }}" rel="noopener" target="_blank">نوبت {{ VERSION|fa }}</a> · نرم‌افزار آزاد با مجوز <bdi dir="ltr">AGPL-3.0</bdi>
+</footer>
+</body>
+</html>
