@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 LABEL org.opencontainers.image.title="Nobat" \
       org.opencontainers.image.description="Private, self-hosted appointment panel with Jalali calendar" \
