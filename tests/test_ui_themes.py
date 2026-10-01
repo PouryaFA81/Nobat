@@ -167,15 +167,21 @@ class UiThemesTests(unittest.TestCase):
 
     def test_popover_panels_use_soft_drop_not_neu_outglow(self):
         css = (main.HERE / "static" / "style.css").read_text()
-        # Shared panel rule should prefer soft drop + hairline over --shadow-out dual-tone
+        # Shared panel rule: soft black drop + dark hairline (not neu out-glow / ink-tint)
         self.assertIn(".menu-body, .page-menu-body", css)
         self.assertIn("0 8px 24px", css)
         self.assertIn("border: 1px solid", css)
-        # Ensure we are not applying --shadow-out / --shadow-light halo on those panels
         block_start = css.find(".menu-body, .page-menu-body")
         block = css[block_start:block_start + 450]
         self.assertNotIn("--shadow-out", block)
         self.assertNotIn("--shadow-light", block)
+        # Dark-mode safe: black-based rim/shadow (ink-tint reads as white rim when --ink is pale)
+        self.assertIn("rgba(0, 0, 0, .45)", block)
+        self.assertIn("rgba(0, 0, 0, .35)", block)
+        for line in block.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("border:") or stripped.startswith("box-shadow:"):
+                self.assertNotIn("var(--ink)", stripped, msg=stripped)
 
     def test_style_no_longer_fights_with_prefers_color_scheme(self):
         css = (main.HERE / "static" / "style.css").read_text()

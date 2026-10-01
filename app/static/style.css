@@ -116,14 +116,15 @@ code { font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--
   stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
 }
 .account-btn .lbl { font-size: .68rem; font-weight: 600; color: var(--muted); line-height: 1; }
-/* Floating panels: soft drop + hairline only (no dual-tone neu out-glow / white halo).
-   Keep full neumorphism on buttons; panels get a slightly tinted surface. */
+/* Floating panels: soft drop + dark hairline only (no dual-tone neu out-glow).
+   Use black-based rim/shadow — not ink-tinted — so dark mode (--ink pale) never
+   reads as a white rim. Keep full neumorphism on buttons. */
 .menu-body, .page-menu-body {
   background: color-mix(in srgb, var(--surface-raised) 92%, var(--ink) 8%);
   color: var(--ink);
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border: 1px solid rgba(0, 0, 0, .35);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 18%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
 }
 .menu-body {
   position: absolute; inset-inline-end: 0; top: calc(100% + 8px); min-width: 220px;
