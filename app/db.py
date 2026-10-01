@@ -12,8 +12,9 @@ from pathlib import Path
 DB_PATH = os.environ.get("DB_PATH", "/data/nobat.db")
 
 # Bump when adding a numbered script under app/migrations/.
-# Migration 0001 baseline; 0002 working hours; 0003 status docs; 0004 audit log.
-SCHEMA_VERSION = 4
+# Migration 0001 baseline; 0002 working hours; 0003 status docs; 0004 audit log;
+# 0005 receptionist; (later Phase 4 scripts bump further).
+SCHEMA_VERSION = 5
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     is_admin      INTEGER NOT NULL DEFAULT 0,
     is_doctor     INTEGER NOT NULL DEFAULT 1,
+    is_receptionist INTEGER NOT NULL DEFAULT 0,
     active        INTEGER NOT NULL DEFAULT 1,
     ntfy_topic    TEXT NOT NULL UNIQUE,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -95,6 +97,22 @@ def db():
         conn.close()
 
 
+
+def _table_columns(c: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in c.execute(f"PRAGMA table_info({table})")}
+
+
+def _ensure_columns(c: sqlite3.Connection) -> None:
+    """Idempotent ADD COLUMN / CREATE for Phase 4+ fields (safe on fresh + upgrade)."""
+    if "users" in {r[0] for r in c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}:
+        cols = _table_columns(c, "users")
+        if "is_receptionist" not in cols:
+            c.execute(
+                "ALTER TABLE users ADD COLUMN is_receptionist INTEGER NOT NULL DEFAULT 0"
+            )
+
+
 def _migration_files() -> list[tuple[int, str, Path]]:
     """Return (version, name, path) for each *.sql script, sorted by version."""
     found: list[tuple[int, str, Path]] = []
@@ -133,6 +151,7 @@ def migrate(c: sqlite3.Connection | None = None) -> list[int]:
             "name TEXT NOT NULL, "
             "applied_at TEXT NOT NULL DEFAULT (datetime('now')))"
         )
+        _ensure_columns(conn)
         have = current_migration_version(conn)
         for version, name, path in _migration_files():
             if version <= have:
@@ -144,6 +163,7 @@ def migrate(c: sqlite3.Connection | None = None) -> list[int]:
                 (version, name),
             )
             applied.append(version)
+        _ensure_columns(conn)
         if own:
             conn.commit()
     finally:
@@ -180,11 +200,13 @@ def new_topic() -> str:
     return "nb_" + secrets.token_urlsafe(18).replace("-", "x").replace("_", "y")
 
 
-def create_user(c, username, name, password, is_admin=False, is_doctor=True) -> int:
+def create_user(c, username, name, password, is_admin=False, is_doctor=True,
+                is_receptionist=False) -> int:
     cur = c.execute(
-        "INSERT INTO users (username, name, password_hash, is_admin, is_doctor, ntfy_topic) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO users (username, name, password_hash, is_admin, is_doctor, "
+        "is_receptionist, ntfy_topic) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (username.strip(), name.strip(), hash_password(password),
-         int(is_admin), int(is_doctor), new_topic()),
+         int(is_admin), int(is_doctor), int(is_receptionist), new_topic()),
     )
     return cur.lastrowid

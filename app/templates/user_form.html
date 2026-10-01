@@ -20,7 +20,8 @@
     </label>
   {% endif %}
   <label class="check"><input type="checkbox" name="is_doctor" value="1" {% if v.is_doctor %}checked{% endif %}> نوبت می‌گیرد ({{ STAFF }})</label>
-  <label class="check"><input type="checkbox" name="is_admin" value="1" {% if v.is_admin %}checked{% endif %}> مدیر نوبت‌دهی (ثبت و ویرایش همه‌ی نوبت‌ها)</label>
+  <label class="check"><input type="checkbox" name="is_receptionist" value="1" {% if v.is_receptionist %}checked{% endif %}> پذیرش (ثبت و مدیریت نوبت‌ها؛ بدون مدیریت کاربران و تنظیمات مدیر)</label>
+  <label class="check"><input type="checkbox" name="is_admin" value="1" {% if v.is_admin %}checked{% endif %}> مدیر نوبت‌دهی (ثبت و ویرایش همه‌ی نوبت‌ها + مدیریت همکاران و تنظیمات)</label>
   {% if u %}
   <label class="check"><input type="checkbox" name="active" value="1" {% if v.active %}checked{% endif %}> حساب فعال است</label>
   {% else %}<input type="hidden" name="active" value="1">{% endif %}

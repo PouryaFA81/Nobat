@@ -9,6 +9,7 @@
       <strong>{{ u.name }}</strong>
       <span class="sub" dir="ltr">{{ u.username }}</span>
       {% if u.is_admin %}<span class="tag green">مدیر نوبت‌دهی</span>{% endif %}
+      {% if u.is_receptionist and not u.is_admin %}<span class="tag green">پذیرش</span>{% endif %}
       {% if not u.is_doctor %}<span class="tag">بدون نوبت</span>{% endif %}
       {% if not u.active %}<span class="tag">غیرفعال</span>{% endif %}
     </a>

@@ -117,13 +117,20 @@ def redirect(url: str, flash: str | None = None, request: Request | None = None)
     return RedirectResponse(url, status_code=303)
 
 
-def login_required(admin=False):
+def can_book(user) -> bool:
+    """Admin or receptionist may manage the shared appointment calendar."""
+    return bool(user["is_admin"] or user["is_receptionist"])
+
+
+def login_required(admin=False, booker=False):
     def deco(fn):
         async def wrapper(request: Request):
             user = current_user(request)
             if not user:
                 return RedirectResponse("/login", status_code=303)
             if admin and not user["is_admin"]:
+                return PlainTextResponse("دسترسی ندارید", status_code=403)
+            if booker and not can_book(user):
                 return PlainTextResponse("دسترسی ندارید", status_code=403)
             try:
                 return await fn(request, user)
@@ -210,7 +217,7 @@ async def home(request: Request):
     user = current_user(request)
     if not user:
         return redirect("/login")
-    return redirect("/calendar" if user["is_admin"] else "/me")
+    return redirect("/calendar" if can_book(user) else "/me")
 
 
 # ---------------------------------------------------------------- staff member view
@@ -258,7 +265,7 @@ async def my_schedule_ics(request: Request, user):
     )
 
 
-@login_required(admin=True)
+@login_required(booker=True)
 async def day_ics(request: Request, user):
     """Coordinator: download one day's appointments as .ics (no private notes)."""
     try:
@@ -285,7 +292,7 @@ async def day_ics(request: Request, user):
 
 
 # ---------------------------------------------------------------- coordinator: calendar
-@login_required(admin=True)
+@login_required(booker=True)
 async def calendar(request: Request, user):
     t = today()
     ty, tm, _ = jalali.to_jalali(t)
@@ -323,7 +330,7 @@ async def calendar(request: Request, user):
                   this_m=f"{ty}-{tm:02d}", docs=docs, doctor_id=doctor_id)
 
 
-@login_required(admin=True)
+@login_required(booker=True)
 async def day_view(request: Request, user):
     try:
         d = jalali.parse_jstr(request.path_params["jdate"])
@@ -407,7 +414,7 @@ def _form_ctx(c, v, title, action, appt=None):
                 years=year_choices(t), hours=HOURS, minutes=MINUTES, durations=DURATIONS)
 
 
-@login_required(admin=True)
+@login_required(booker=True)
 async def appt_new(request: Request, user):
     with db.db() as c:
         if request.method == "GET":
@@ -443,7 +450,7 @@ async def appt_new(request: Request, user):
                             background=BackgroundTask(notify.appointment_event, "new", appt))
 
 
-@login_required(admin=True)
+@login_required(booker=True)
 async def appt_edit(request: Request, user):
     appt_id = request.path_params["id"]
     with db.db() as c:
@@ -500,7 +507,7 @@ async def appt_edit(request: Request, user):
                             background=BackgroundTask(notify_changes))
 
 
-@login_required(admin=True)
+@login_required(booker=True)
 async def appt_cancel(request: Request, user):
     await form_checked(request)
     with db.db() as c:
@@ -528,10 +535,10 @@ async def appt_set_status(request: Request, user):
     with db.db() as c:
         appt = c.execute("SELECT * FROM appointments WHERE id = ?", (appt_id,)).fetchone()
         if not appt:
-            return redirect("/calendar" if user["is_admin"] else "/me")
-        if not user["is_admin"] and appt["doctor_id"] != user["id"]:
+            return redirect("/calendar" if can_book(user) else "/me")
+        if not can_book(user) and appt["doctor_id"] != user["id"]:
             return PlainTextResponse("دسترسی ندارید", status_code=403)
-        if appt["status"] == "cancelled" and not user["is_admin"]:
+        if appt["status"] == "cancelled" and not can_book(user):
             return PlainTextResponse("نوبت لغو شده را نمی‌توانید تغییر دهید.", status_code=400)
         c.execute(
             "UPDATE appointments SET status = ?, updated_at = datetime('now') WHERE id = ?",
@@ -540,7 +547,7 @@ async def appt_set_status(request: Request, user):
                      detail={"from": appt["status"], "to": new_status})
     label = schedule.status_label(new_status)
     request.session["flash"] = f"وضعیت نوبت: {label}"
-    if user["is_admin"]:
+    if can_book(user):
         return redirect(f"/day/{jalali.jstr(date.fromisoformat(appt['day']))}", request=request)
     past = request.query_params.get("past") == "1"
     return redirect("/me?past=1" if past else "/me", request=request)
@@ -676,6 +683,7 @@ def _user_form_values(form):
                 username=jalali.en_digits(str(form.get("username", ""))).strip().lower()[:40],
                 password=str(form.get("password", "")),
                 is_admin=form.get("is_admin") == "1", is_doctor=form.get("is_doctor") == "1",
+                is_receptionist=form.get("is_receptionist") == "1",
                 active=form.get("active") == "1")
 
 
@@ -683,7 +691,7 @@ def _user_form_values(form):
 async def user_new(request: Request, user):
     if request.method == "GET":
         return render(request, "user_form.html", user, u=None,
-                      v=dict(name="", username="", is_admin=False, is_doctor=True, active=True))
+                      v=dict(name="", username="", is_admin=False, is_doctor=True, is_receptionist=False, active=True))
     v = _user_form_values(await form_checked(request))
     err = None
     if not v["name"] or not v["username"]:
@@ -697,7 +705,8 @@ async def user_new(request: Request, user):
             if c.execute("SELECT 1 FROM users WHERE username = ?", (v["username"],)).fetchone():
                 err = "این نام کاربری قبلاً استفاده شده است."
             else:
-                uid = db.create_user(c, v["username"], v["name"], v["password"], v["is_admin"], v["is_doctor"])
+                uid = db.create_user(c, v["username"], v["name"], v["password"], v["is_admin"], v["is_doctor"],
+                                  v["is_receptionist"])
     if err:
         return render(request, "user_form.html", user, u=None, v=v, error=err, status_code=400)
     return redirect(f"/users/{uid}/edit", "کاربر ساخته شد. اطلاعات ورود و اعلان را به او بدهید.", request)
@@ -724,8 +733,9 @@ async def user_edit(request: Request, user):
             return render(request, "user_form.html", user, u=u, v=v, error=err,
                           ntfy_public=NTFY_PUBLIC_URL, status_code=400)
         was_active = bool(u["active"])
-        c.execute("UPDATE users SET name = ?, is_admin = ?, is_doctor = ?, active = ? WHERE id = ?",
-                  (v["name"], int(v["is_admin"]), int(v["is_doctor"]), int(v["active"]), uid))
+        c.execute("UPDATE users SET name = ?, is_admin = ?, is_doctor = ?, is_receptionist = ?, active = ? WHERE id = ?",
+                  (v["name"], int(v["is_admin"]), int(v["is_doctor"]), int(v["is_receptionist"]),
+                   int(v["active"]), uid))
         if v["password"]:
             c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (db.hash_password(v["password"]), uid))
         if was_active and not v["active"]:
@@ -882,7 +892,7 @@ async def search_appointments(request: Request, user):
     if len(q) >= 1:
         like = f"%{q}%"
         with db.db() as c:
-            if user["is_admin"]:
+            if can_book(user):
                 rows = c.execute(
                     "SELECT a.*, u.name AS doctor_name, cu.name AS created_by_name "
                     "FROM appointments a JOIN users u ON u.id = a.doctor_id "
