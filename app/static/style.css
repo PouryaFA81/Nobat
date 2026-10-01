@@ -54,44 +54,135 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; }
 small, .hint { color: var(--muted); font-size: .85rem; }
 code { font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--brand-soft); padding: 2px 6px; border-radius: 6px; word-break: break-all; }
 
-/* header — neumorphic chrome (.neu from themes.css) */
+/* header — Option A′ compact chrome (.neu from themes.css) */
 .top {
-  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
-  padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top));
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top));
   background: var(--surface-raised); color: var(--ink);
   box-shadow: var(--shadow-out-sm);
   border: 0;
 }
 .top a { color: var(--ink); text-decoration: none; }
-.top .brand { color: var(--brand); font-weight: 800; font-size: 1.15rem; }
-.top nav { display: flex; align-items: center; gap: 14px; margin-inline-start: auto; flex-wrap: wrap; font-size: .95rem; }
-.menu { position: relative; }
-.menu summary { cursor: pointer; list-style: none; opacity: .9; }
-.menu summary::-webkit-details-marker { display: none; }
-.menu summary::after { content: " ▾"; }
-.menu-body {
-  position: absolute; left: 0; top: 130%; min-width: 170px; background: var(--surface-raised); color: var(--ink);
-  border: 0; border-radius: var(--radius); padding: 6px; box-shadow: var(--shadow-out);
-}
-.menu-body a, .menu-body .link { display: block; width: 100%; text-align: right; padding: 8px 10px; color: var(--ink); border-radius: 8px; }
-.menu-body a:hover, .menu-body .link:hover { background: var(--brand-soft); }
+.top .brand { color: var(--brand); font-weight: 800; font-size: 1.15rem; flex-shrink: 0; }
+.nav-primary { display: flex; align-items: center; gap: 6px; margin-inline-start: 4px; }
+.nav-end { display: flex; align-items: center; gap: 6px; margin-inline-start: auto; }
 
-/* theme controls in chrome */
-.theme-controls { display: flex; align-items: center; gap: 6px; }
-.theme-controls .neu-btn.small,
-.neu-btn.small { min-height: 34px; padding: 3px 10px; font-size: .88rem; }
-.theme-picker { position: relative; }
-.theme-picker > summary { list-style: none; cursor: pointer; }
-.theme-picker > summary::-webkit-details-marker { display: none; }
-.theme-picker-body {
-  position: absolute; left: 0; top: 120%; min-width: 140px; padding: 6px;
-  display: grid; gap: 4px; z-index: 6;
+.icon-btn {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; min-width: 48px; min-height: 48px; padding: 4px 8px;
+  border: 0; border-radius: var(--radius-sm);
+  background: var(--surface-raised); box-shadow: var(--shadow-out-sm);
+  color: var(--ink); text-decoration: none; cursor: pointer; font: inherit;
 }
-.theme-picker-body .neu-btn.active,
-[data-theme-set][aria-pressed="true"] {
+.icon-btn:active { box-shadow: var(--shadow-in-sm); }
+.icon-btn.primary { background: var(--brand); color: var(--brand-ink); }
+.icon-btn svg {
+  width: 22px; height: 22px; stroke: currentColor; fill: none;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.icon-btn .lbl { font-size: .68rem; font-weight: 600; line-height: 1; }
+
+.mode-switch {
+  position: relative; width: 52px; height: 30px; border-radius: 999px; border: 0;
+  background: var(--surface-raised); box-shadow: var(--shadow-in-sm);
+  cursor: pointer; padding: 0; flex-shrink: 0;
+}
+.mode-switch .knob {
+  position: absolute; top: 3px; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--brand); box-shadow: var(--shadow-out-sm);
+  display: grid; place-items: center; inset-inline-start: 3px;
+  transition: inset-inline-start .15s ease;
+}
+[data-mode="dark"] .mode-switch .knob { inset-inline-start: 25px; }
+.mode-switch svg {
+  width: 14px; height: 14px; stroke: var(--brand-ink); fill: none; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.mode-switch .icon-moon { display: none; }
+[data-mode="dark"] .mode-switch .icon-sun { display: none; }
+[data-mode="dark"] .mode-switch .icon-moon { display: block; }
+
+.menu { position: relative; }
+.menu > summary { cursor: pointer; list-style: none; }
+.menu > summary::-webkit-details-marker { display: none; }
+.account-btn {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; min-width: 48px; min-height: 48px; padding: 4px 8px;
+  border: 0; border-radius: var(--radius-sm); background: var(--surface-raised);
+  box-shadow: var(--shadow-out-sm); color: var(--ink); font: inherit; cursor: pointer;
+}
+.account-btn svg {
+  width: 20px; height: 20px; stroke: currentColor; fill: none;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.account-btn .lbl { font-size: .68rem; font-weight: 600; color: var(--muted); line-height: 1; }
+/* Floating panels: soft drop + dark hairline only (no dual-tone neu out-glow).
+   Use black-based rim/shadow — not ink-tinted — so dark mode (--ink pale) never
+   reads as a white rim. Keep full neumorphism on buttons. */
+.menu-body, .page-menu-body {
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--ink) 8%);
+  color: var(--ink);
+  border: 1px solid rgba(0, 0, 0, .35);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+}
+.menu-body {
+  position: absolute; inset-inline-end: 0; top: calc(100% + 8px); min-width: 220px;
+  padding: 6px; z-index: 10; display: grid; gap: 2px;
+}
+.menu-body a, .menu-body .link {
+  display: block; width: 100%; text-align: right; padding: 10px 12px;
+  color: var(--ink); border-radius: 8px; background: transparent; border: 0;
+  font: inherit; cursor: pointer; text-decoration: none;
+}
+.menu-body a:hover, .menu-body .link:hover { background: var(--brand-soft); }
+.menu-group-label {
+  font-size: .72rem; font-weight: 700; color: var(--muted);
+  padding: 8px 12px 2px; letter-spacing: .02em;
+}
+.menu-sep {
+  height: 1px; background: var(--shadow-dark); margin: 4px 8px; opacity: .35;
+}
+.menu-sub {
+  display: block; font-size: .8rem; color: var(--muted); padding: 4px 12px 2px;
+}
+.theme-picker-inline {
+  display: grid; gap: 4px; padding: 0 6px 6px;
+}
+.theme-picker-inline .neu-btn.small {
+  width: 100%; justify-content: center;
+}
+.neu-btn.small { min-height: 34px; padding: 3px 10px; font-size: .88rem; }
+[data-theme-set][aria-pressed="true"],
+.theme-picker-inline .neu-btn.active {
   box-shadow: var(--shadow-in-sm);
   color: var(--brand);
   font-weight: 700;
+}
+
+/* page actions — bare ⋮ (not a neumorphic square) */
+.page-menu { position: relative; margin-inline-start: auto; }
+.page-menu > summary.dots {
+  list-style: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 36px; min-height: 36px; padding: 0 6px;
+  border: 0; background: transparent; color: var(--muted);
+  border-radius: 8px; font-size: 1.35rem; line-height: 1; letter-spacing: 1px;
+  font-family: inherit;
+}
+.page-menu > summary.dots::-webkit-details-marker { display: none; }
+.page-menu > summary.dots:hover { color: var(--ink); background: var(--brand-soft); }
+.page-menu-body {
+  position: absolute; inset-inline-end: 0; top: calc(100% + 6px); min-width: 160px; z-index: 5;
+  padding: 6px; display: grid; gap: 2px;
+}
+.page-menu-body a, .page-menu-body .link, .page-menu-body button {
+  display: block; width: 100%; text-align: right; padding: 10px 12px;
+  border: 0; background: transparent; color: var(--ink);
+  font: inherit; border-radius: 8px; cursor: pointer; text-decoration: none; font-size: .9rem;
+}
+.page-menu-body a:hover, .page-menu-body .link:hover, .page-menu-body button:hover {
+  background: var(--brand-soft);
 }
 
 /* buttons — neu shadows instead of hard borders */
@@ -204,7 +295,8 @@ legend { font-weight: 600; padding: 0 6px; }
 @media (max-width: 480px) {
   .cal { border-spacing: 2px; }
   .cal td { height: 54px; }
-  .top nav { gap: 10px; font-size: .9rem; }
+  .nav-primary { gap: 4px; }
+  .icon-btn, .account-btn { min-width: 44px; }
 }
 .danger-zone { box-shadow: var(--shadow-out); outline: 2px solid var(--danger); outline-offset: 0; }
 .danger-zone h2 { color: var(--danger); }
@@ -214,7 +306,7 @@ legend { font-weight: 600; padding: 0 6px; }
 
 /* ---- print: day sheet / me schedule ---- */
 @media print {
-  .top, .foot, .flash, .error, .no-print, .appt-actions, .menu, .theme-controls {
+  .top, .foot, .flash, .error, .no-print, .appt-actions, .menu, .nav-end, .page-menu {
     display: none !important;
   }
   body {

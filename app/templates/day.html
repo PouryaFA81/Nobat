@@ -2,15 +2,19 @@
 {% block content %}
 {% set dq = ("?doctor=" ~ doctor_id) if doctor_id else "" %}
 <div class="bar">
-  <a class="btn no-print" href="/day/{{ prev }}{{ dq }}" aria-label="روز قبل">›</a>
+  <a class="btn no-print" href="/day/{{ prev }}{{ dq }}" aria-label="روز قبل" dir="ltr">›</a>
   <h1 class="month">{{ d|long_date }}</h1>
-  <a class="btn no-print" href="/day/{{ next }}{{ dq }}" aria-label="روز بعد">‹</a>
+  <a class="btn no-print" href="/day/{{ next }}{{ dq }}" aria-label="روز بعد" dir="ltr">‹</a>
 </div>
 <div class="actions no-print">
   <a class="btn primary" href="/appointments/new?day={{ j }}{{ ('&doctor=' ~ doctor_id) if doctor_id else '' }}">+ نوبت جدید در این روز</a>
-  <button type="button" class="btn ghost" data-print>چاپ برگه روز</button>
-  <a class="btn ghost" href="/day/{{ j }}/ics{{ dq }}">دانلود ICS</a>
-  <a class="btn ghost" href="/calendar?m={{ j[:7] }}{{ ('&doctor=' ~ doctor_id) if doctor_id else '' }}">بازگشت به تقویم</a>
+  <details class="page-menu">
+    <summary class="dots" title="بیشتر" aria-label="گزینه‌های صفحه">⋮</summary>
+    <div class="page-menu-body" role="menu">
+      <button type="button" class="link" data-print>چاپ</button>
+      <a href="/day/{{ j }}/ics{{ dq }}">دانلود ICS</a>
+    </div>
+  </details>
 </div>
 
 {% if doctor_id %}<p class="hint no-print">فقط نوبت‌های یک {{ STAFF }} نمایش داده می‌شود. <a href="/day/{{ j }}">نمایش همه</a></p>{% endif %}

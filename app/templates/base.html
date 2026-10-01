@@ -12,50 +12,76 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="نوبت">
 <link rel="stylesheet" href="/static/themes.css?v=1">
-<link rel="stylesheet" href="/static/style.css?v=6">
-<script src="/static/theme.js?v=1"></script>
+<link rel="stylesheet" href="/static/style.css?v=8">
+<script src="/static/theme.js?v=2"></script>
 <script src="/static/app.js?v=3" defer></script>
 </head>
 <body>
 {% if user %}
 <header class="top neu">
   <a class="brand" href="/">نوبت</a>
-  <nav>
-    {% if user.is_admin or user.is_receptionist %}
-      <a href="/calendar">تقویم</a>
-      <a href="/appointments/new">+ نوبت</a>
-      <a href="/search">جستجو</a>
-    {% endif %}
-    {% if user.is_admin %}
-      <a href="/export">خروجی CSV</a>
-      <a href="/schedule">ساعات کاری</a>
-      <a href="/audit">گزارش فعالیت</a>
-      <a href="/users">همکاران</a>
-    {% endif %}
-    {% if user.is_doctor %}<a href="/me">برنامه من</a>{% endif %}
-    {% if user.is_doctor and not user.is_admin and not user.is_receptionist %}<a href="/search">جستجو</a>{% endif %}
-    <div class="theme-controls no-print" role="group" aria-label="ظاهر">
-      <button type="button" class="neu-btn small theme-mode" data-theme-mode title="حالت تیره">تیره</button>
-      <details class="theme-picker">
-        <summary class="neu-btn small">پالت</summary>
-        <div class="theme-picker-body neu-raised">
-          <button type="button" class="neu-btn small" data-theme-set="yaru-orange">نارنجی یارو</button>
-          <button type="button" class="neu-btn small" data-theme-set="teal">سبزآبی</button>
-        </div>
-      </details>
-    </div>
-    <details class="menu">
-      <summary>{{ user.name }}</summary>
-      <div class="menu-body neu-raised">
+  {% if user.is_admin or user.is_receptionist %}
+  <nav class="nav-primary" aria-label="اصلی">
+    <a class="icon-btn" href="/calendar" title="تقویم" aria-label="تقویم">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>
+      <span class="lbl">تقویم</span>
+    </a>
+    <a class="icon-btn primary" href="/appointments/new" title="نوبت جدید" aria-label="نوبت جدید">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      <span class="lbl">+</span>
+    </a>
+  </nav>
+  {% endif %}
+  <div class="nav-end no-print">
+    <button type="button" class="mode-switch" data-theme-mode title="حالت تیره" aria-label="تغییر روشن و تیره" aria-pressed="false">
+      <span class="knob" aria-hidden="true">
+        <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 14.5A8.5 8.5 0 1 1 9.5 3 7 7 0 0 0 21 14.5z"/></svg>
+      </span>
+    </button>
+    <details class="menu account">
+      <summary class="account-btn" title="حساب" aria-label="حساب">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg>
+        <span class="lbl">حساب</span>
+      </summary>
+      <div class="menu-body" role="menu">
+        {% if user.is_doctor %}
+        <a href="/me">برنامه من</a>
+        {% endif %}
+        {% if user.is_admin or user.is_receptionist or user.is_doctor %}
+        <a href="/search">جستجو</a>
+        {% endif %}
+        {% if user.is_doctor or user.is_admin or user.is_receptionist %}
+        <div class="menu-sep" role="separator"></div>
+        {% endif %}
+
+        <div class="menu-group-label">حساب</div>
         <a href="/notifications">تنظیم اعلان‌ها</a>
         <a href="/password">تغییر رمز</a>
         <form method="post" action="/logout">
           <input type="hidden" name="csrf" value="{{ csrf }}">
-          <button class="link">خروج</button>
+          <button class="link" type="submit">خروج</button>
         </form>
+
+        <div class="menu-sep" role="separator"></div>
+        <div class="menu-group-label">ظاهر</div>
+        <div class="theme-picker-inline" role="group" aria-label="پالت">
+          <span class="menu-sub">پالت</span>
+          <button type="button" class="neu-btn small" data-theme-set="yaru-orange">نارنجی یارو</button>
+          <button type="button" class="neu-btn small" data-theme-set="teal">سبزآبی</button>
+        </div>
+
+        {% if user.is_admin %}
+        <div class="menu-sep" role="separator"></div>
+        <div class="menu-group-label">مدیریت</div>
+        <a href="/users">همکاران</a>
+        <a href="/schedule">ساعات کاری</a>
+        <a href="/export">خروجی CSV</a>
+        <a href="/audit">گزارش فعالیت</a>
+        {% endif %}
       </div>
     </details>
-  </nav>
+  </div>
 </header>
 {% endif %}
 <main>

@@ -37,10 +37,17 @@ Ideal when you want a private calendar on your own server, not another SaaS inbo
 - **Phone notifications** — Alerts when a session is booked, moved, or cancelled; an evening digest of tomorrow’s sessions.
 - **Installable PWA** — Add Nobat to the home screen from the browser, like a native app.
 
+<p align="center"><strong>Light</strong></p>
 <p align="center">
   <img src="docs/screenshots/calendar.png" width="260" alt="Coordinator: month calendar">
   <img src="docs/screenshots/day.png" width="260" alt="Coordinator: appointments of one day">
   <img src="docs/screenshots/my-schedule.png" width="260" alt="Staff member: own schedule">
+</p>
+<p align="center"><strong>Dark</strong></p>
+<p align="center">
+  <img src="docs/screenshots/calendar-dark.png" width="260" alt="Coordinator: month calendar (dark)">
+  <img src="docs/screenshots/day-dark.png" width="260" alt="Coordinator: appointments of one day (dark)">
+  <img src="docs/screenshots/my-schedule-dark.png" width="260" alt="Staff member: own schedule (dark)">
 </p>
 
 ## Themes & appearance

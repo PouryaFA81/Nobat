@@ -48,9 +48,9 @@
     var modeBtn = document.querySelector("[data-theme-mode]");
     if (modeBtn) {
       var dark = document.documentElement.getAttribute("data-mode") === "dark";
-      modeBtn.textContent = dark ? "روشن" : "تیره";
       modeBtn.setAttribute("aria-pressed", dark ? "true" : "false");
       modeBtn.title = dark ? "حالت روشن" : "حالت تیره";
+      modeBtn.setAttribute("aria-label", dark ? "حالت روشن" : "حالت تیره");
     }
     document.querySelectorAll("[data-theme-set]").forEach(function (el) {
       var t = el.getAttribute("data-theme-set");

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Header chrome Option A′: primary actions are only **تقویم** and **+**; sun/moon mode switch beside **حساب**; palette and admin tools (همکاران، ساعات کاری، CSV، گزارش فعالیت) under Account menu groups; staff **برنامه من** / **جستجو** under Account. Page print/ICS use a bare **⋮** menu (چاپ / دانلود ICS). Account and page ⋮ panels use soft drop shadow + hairline (no dual-tone neu out-glow). Service worker cache bumped to nobat-static-v6.
+
 ### Added
 - Neumorphism theme tokens (`themes.css`): yaru-orange (default) and teal palettes; light/dark via `data-theme` / `data-mode`; chrome toggles (روشن/تیره + پالت) with localStorage.
 - ICS download for staff `/me` and coordinator day view (no private notes in DESCRIPTION).

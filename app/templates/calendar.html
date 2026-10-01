@@ -2,9 +2,9 @@
 {% block content %}
 {% set dq = ("&doctor=" ~ doctor_id) if doctor_id else "" %}
 <div class="bar">
-  <a class="btn" href="/calendar?m={{ prev_m }}{{ dq }}" aria-label="ماه قبل">›</a>
+  <a class="btn" href="/calendar?m={{ prev_m }}{{ dq }}" aria-label="ماه قبل" dir="ltr">›</a>
   <h1 class="month">{{ MONTHS[jm - 1] }} {{ jy|fa }}</h1>
-  <a class="btn" href="/calendar?m={{ next_m }}{{ dq }}" aria-label="ماه بعد">‹</a>
+  <a class="btn" href="/calendar?m={{ next_m }}{{ dq }}" aria-label="ماه بعد" dir="ltr">‹</a>
   <a class="btn ghost" href="/calendar?m={{ this_m }}{{ dq }}">امروز</a>
 </div>
 
