@@ -3,13 +3,26 @@
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
 
 DB_PATH = os.environ.get("DB_PATH", "/data/nobat.db")
 
+# Bump when adding a numbered script under app/migrations/.
+# Migration 0001 is the baseline matching this SCHEMA.
+SCHEMA_VERSION = 1
+
+MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -58,10 +71,68 @@ def db():
         conn.close()
 
 
+def _migration_files() -> list[tuple[int, str, Path]]:
+    """Return (version, name, path) for each *.sql script, sorted by version."""
+    found: list[tuple[int, str, Path]] = []
+    if not MIGRATIONS_DIR.is_dir():
+        return found
+    for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+        m = re.match(r"^(\d+)_(.+)\.sql$", path.name)
+        if not m:
+            continue
+        found.append((int(m.group(1)), m.group(2), path))
+    return found
+
+
+def current_migration_version(c: sqlite3.Connection) -> int:
+    row = c.execute("SELECT COALESCE(MAX(version), 0) FROM schema_migrations").fetchone()
+    return int(row[0])
+
+
+def migrate(c: sqlite3.Connection | None = None) -> list[int]:
+    """Apply pending numbered SQL scripts. Returns list of newly applied versions.
+
+    Safe to call repeatedly. Fresh installs get the full SCHEMA via init(), then
+    migrate() records baseline (and any later) scripts. Upgrades apply only
+    scripts newer than the highest recorded version.
+    """
+    own = c is None
+    if own:
+        conn = connect()
+    else:
+        conn = c
+    applied: list[int] = []
+    try:
+        conn.executescript(
+            "CREATE TABLE IF NOT EXISTS schema_migrations ("
+            "version INTEGER PRIMARY KEY, "
+            "name TEXT NOT NULL, "
+            "applied_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        )
+        have = current_migration_version(conn)
+        for version, name, path in _migration_files():
+            if version <= have:
+                continue
+            sql = path.read_text(encoding="utf-8")
+            conn.executescript(sql)
+            conn.execute(
+                "INSERT INTO schema_migrations (version, name) VALUES (?, ?)",
+                (version, name),
+            )
+            applied.append(version)
+        if own:
+            conn.commit()
+    finally:
+        if own:
+            conn.close()
+    return applied
+
+
 def init():
     os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     with db() as c:
         c.executescript(SCHEMA)
+        migrate(c)
 
 
 # ---------- passwords (scrypt, standard library only) ----------
