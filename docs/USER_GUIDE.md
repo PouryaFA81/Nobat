@@ -61,7 +61,7 @@ Your choice is remembered in this browser.
 Open **تقویم**.
 
 - You see a **Jalali (Persian) month**.
-- A green number on a day = how many **active** appointments that day has.
+- An orange number on a day = how many **active** appointments that day has.
 - Tap a day to open the **day list**.
 - Use the arrows to change month, or **امروز** to jump to today.
 - Optional filter: pick one colleague to see only their days.
