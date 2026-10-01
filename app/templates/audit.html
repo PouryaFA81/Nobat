@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}گزارش فعالیت · نوبت{% endblock %}
+{% block content %}
+<div class="bar"><h1 class="month">گزارش فعالیت</h1></div>
+<p class="hint">فقط مدیران این صفحه را می‌بینند. رویدادها فقط اضافه می‌شوند و ویرایش نمی‌شوند. یادداشت خصوصی نوبت‌ها اینجا ثبت نمی‌شود.</p>
+
+<section class="card form" style="margin-bottom:1.25rem">
+  <h2>فیلتر</h2>
+  <form method="get" action="/audit" class="form">
+    <label>روز (میلادی YYYY-MM-DD)
+      <input name="day" value="{{ day }}" maxlength="10" placeholder="2026-10-01" dir="ltr">
+    </label>
+    <label>عامل
+      <select name="actor">
+        <option value="">— همه —</option>
+        {% for a in admins %}
+        <option value="{{ a.id }}" {% if actor == (a.id|string) %}selected{% endif %}>{{ a.name }} ({{ a.username }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="form-actions">
+      <button class="btn primary">اعمال فیلتر</button>
+      <a class="btn" href="/audit">پاک کردن</a>
+    </div>
+  </form>
+</section>
+
+{% if rows %}
+<ul class="list card">
+  {% for r in rows %}
+  <li>
+    <div>
+      <strong>{{ r.action|action_label }}</strong>
+      <span class="tag">{{ r.action }}</span>
+      {% if r.appointment_id %}<span class="sub">نوبت #{{ r.appointment_id|fa }}</span>{% endif %}
+      <div class="sub" dir="ltr">{{ r.created_at }} · {{ r.actor_username or '—' }}</div>
+      {% if r.detail %}<div class="sub" dir="ltr" style="word-break:break-all">{{ r.detail }}</div>{% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty-state">رویدادی با این فیلتر پیدا نشد.</p>
+{% endif %}
+{% endblock %}

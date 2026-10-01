@@ -12,8 +12,8 @@ from pathlib import Path
 DB_PATH = os.environ.get("DB_PATH", "/data/nobat.db")
 
 # Bump when adding a numbered script under app/migrations/.
-# Migration 0001 is the baseline; 0002 working hours; 0003 status docs.
-SCHEMA_VERSION = 3
+# Migration 0001 baseline; 0002 working hours; 0003 status docs; 0004 audit log.
+SCHEMA_VERSION = 4
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -60,8 +60,20 @@ CREATE TABLE IF NOT EXISTS blocked_days (
     reason     TEXT NOT NULL DEFAULT '',
     UNIQUE (day, doctor_id)
 );
+CREATE TABLE IF NOT EXISTS audit_log (
+    id              INTEGER PRIMARY KEY,
+    actor_user_id   INTEGER,
+    actor_username  TEXT NOT NULL DEFAULT '',
+    action          TEXT NOT NULL,
+    appointment_id  INTEGER,
+    detail          TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE INDEX IF NOT EXISTS idx_appt_day ON appointments(day);
 CREATE INDEX IF NOT EXISTS idx_appt_doctor ON appointments(doctor_id, day);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, created_at);
 """
 
 
