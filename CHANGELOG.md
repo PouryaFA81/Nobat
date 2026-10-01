@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- Print-friendly day sheet and staff schedule (print CSS; چاپ buttons on `/day` and `/me`).
+- Admin CSV export (`/export`, `/export.csv`): Jalali date range, UTF-8 BOM, notes excluded by default.
+- Initials search (`/search`): admin all appointments; staff own schedule only.
+- Day view shows appointment `created_by` (ثبت‌کننده).
+- Wider Jalali year picker (±5 years) on booking and schedule forms.
 - Append-only audit log for coordinator actions with admin UI (`/audit`); migration `0004`.
 - Reminder catch-up: missed evening-before reminders for *today* are sent once before `REMINDER_HOUR` (idempotent via `reminder_sent`).
 - Working hours (clinic default + per-staff override) and blocked/holiday days with admin UI (`/schedule`); migration `0002`.
