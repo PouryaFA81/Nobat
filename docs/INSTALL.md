@@ -144,14 +144,24 @@ Open your crontab:
 crontab -e
 ```
 
-Add this line (change `/srv/nobat` if you used another folder):
+Add these lines (change `/srv/nobat` if you used another folder):
 
 ```
-0 3 * * * cd /srv/nobat && docker compose exec -T nobat python -m app.manage backup /data/backups/nobat-$(date +\%F).db >> /srv/nobat/backup.log 2>&1
+0 3 * * * cd /srv/nobat && docker compose exec -T nobat python -m app.manage backup >> /srv/nobat/backup.log 2>&1
+30 3 * * * cd /srv/nobat && docker compose exec -T nobat python -m app.manage backup-prune --days 14 >> /srv/nobat/backup.log 2>&1
 ```
 
-Backups appear in `data/backups/`, and `backup.log` records each run. Check them with `ls -la data/backups/` and `cat backup.log`.
-It's a good idea to also copy them to another machine now and then.
+`backup` with no path writes to `data/backups/nobat-YYYY-MM-DD.db` inside the container (`/data/backups/`…).
+`backup-prune` deletes backups older than 14 days (change `--days` if you want).
+Check with `ls -la data/backups/` and `cat backup.log`. Copy backups off the server now and then.
+
+After upgrading Nobat, apply database migrations once:
+
+```bash
+docker compose exec nobat python -m app.manage migrate
+```
+
+(Fresh installs also run migrations automatically on startup / `init`.)
 
 ---
 
@@ -160,9 +170,15 @@ It's a good idea to also copy them to another machine now and then.
 | What | Command |
 |---|---|
 | See logs | `docker compose logs -f nobat` |
+| Apply DB migrations | `docker compose exec nobat python -m app.manage migrate` |
 | Reset a forgotten password | `docker compose exec nobat python -m app.manage reset-password USERNAME` |
-| Make a backup now | `docker compose exec nobat python -m app.manage backup /data/backups/manual.db` |
-| Update to a new version | `git pull && docker compose up -d --build` |
+| Make a backup now | `docker compose exec nobat python -m app.manage backup` |
+| Prune old backups | `docker compose exec nobat python -m app.manage backup-prune --days 14` |
+| Restore a backup to a file | `docker compose exec nobat python -m app.manage restore /data/backups/FILE.db --to /data/restored.db` |
+| Restore over the live DB | `docker compose exec nobat python -m app.manage restore /data/backups/FILE.db --force` |
+| Deactivate a user | `docker compose exec nobat python -m app.manage deactivate-user USERNAME` |
+| Hard-delete a user | `docker compose exec nobat python -m app.manage delete-user USERNAME --confirm YES` |
+| Update to a new version | `git pull && docker compose up -d --build && docker compose exec nobat python -m app.manage migrate` |
 
 ## Moving to another server
 
