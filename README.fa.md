@@ -34,10 +34,17 @@
 - **اعلان روی گوشی** — هنگام ثبت، جابه‌جایی یا لغو نوبت؛ و هر شب فهرست جلسه‌های فردا.
 - **نصب مثل برنامه (PWA)** — از مرورگر به صفحه‌ی اصلی گوشی اضافه کنید.
 
+<p align="center"><strong>حالت روشن</strong></p>
 <p align="center">
   <img src="docs/screenshots/calendar.png" width="260" alt="تقویم ماهانه‌ی هماهنگ‌کننده">
   <img src="docs/screenshots/day.png" width="260" alt="نوبت‌های یک روز">
   <img src="docs/screenshots/my-schedule.png" width="260" alt="برنامه‌ی یک همکار">
+</p>
+<p align="center"><strong>حالت تیره</strong></p>
+<p align="center">
+  <img src="docs/screenshots/calendar-dark.png" width="260" alt="تقویم ماهانه‌ی هماهنگ‌کننده (حالت تیره)">
+  <img src="docs/screenshots/day-dark.png" width="260" alt="نوبت‌های یک روز (حالت تیره)">
+  <img src="docs/screenshots/my-schedule-dark.png" width="260" alt="برنامه‌ی یک همکار (حالت تیره)">
 </p>
 
 ## ظاهر و پوسته‌ها
