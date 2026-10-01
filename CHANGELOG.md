@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- Append-only audit log for coordinator actions with admin UI (`/audit`); migration `0004`.
+- Reminder catch-up: missed evening-before reminders for *today* are sent once before `REMINDER_HOUR` (idempotent via `reminder_sent`).
 - Working hours (clinic default + per-staff override) and blocked/holiday days with admin UI (`/schedule`); migration `0002`.
 - Appointment statuses: arrived, no-show, completed (plus active/cancelled); status buttons on day and me views; migration `0003`.
 - Database migration runner (`schema_migrations`, `python -m app.manage migrate`) with baseline `0001`.

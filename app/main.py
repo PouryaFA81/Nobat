@@ -26,7 +26,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from . import __version__, db, jalali, notify, schedule
+from . import __version__, audit, db, jalali, notify, schedule
 from .jalali import fa
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -52,6 +52,7 @@ templates.env.filters["fa"] = fa
 templates.env.filters["long_date"] = lambda s: jalali.long_date(date.fromisoformat(s))
 templates.env.filters["jstr"] = lambda s: jalali.jstr(date.fromisoformat(s))
 templates.env.filters["status_label"] = schedule.status_label
+templates.env.filters["action_label"] = audit.action_label
 templates.env.globals.update(MONTHS=jalali.MONTHS, STAFF=STAFF_LABEL, STAFF_PL=STAFF_LABEL_PLURAL,
                              SOURCE_URL=SOURCE_URL, VERSION=__version__,
                              STATUS_LABELS=schedule.STATUS_LABELS,
@@ -369,8 +370,12 @@ async def appt_new(request: Request, user):
             "reminder_sent, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (v["doctor_id"], v["initials"], v["day"], v["start_time"], v["duration"], v["description"],
              reminder_flag(v["_day"]), user["id"]))
+        appt_id = cur.lastrowid
+        audit.record(user, audit.BOOK, appointment_id=appt_id, conn=c,
+                     detail={"day": v["day"], "start": v["start_time"], "doctor_id": v["doctor_id"],
+                             "initials": v["initials"]})
         c.commit()
-        appt = appt_with_topic(c, cur.lastrowid)
+        appt = appt_with_topic(c, appt_id)
     flash = f"نوبت ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
     if v.get("_blocked_warning"):
         flash = f"{flash} {v['_blocked_warning']}"
@@ -406,6 +411,17 @@ async def appt_edit(request: Request, user):
             "description = ?, status = 'active', reminder_sent = ?, updated_at = datetime('now') WHERE id = ?",
             (v["doctor_id"], v["initials"], v["day"], v["start_time"], v["duration"], v["description"],
              reminder, old["id"]))
+        if old["status"] == "cancelled":
+            audit.record(user, audit.RESTORE, appointment_id=old["id"], conn=c,
+                         detail={"day": v["day"], "start": v["start_time"], "doctor_id": v["doctor_id"]})
+        if reassigned:
+            audit.record(user, audit.REASSIGN, appointment_id=old["id"], conn=c,
+                         detail={"from_doctor": old["doctor_id"], "to_doctor": v["doctor_id"],
+                                 "day": v["day"], "start": v["start_time"]})
+        elif moved:
+            audit.record(user, audit.MOVE, appointment_id=old["id"], conn=c,
+                         detail={"from": f"{old['day']} {old['start_time']}",
+                                 "to": f"{v['day']} {v['start_time']}"})
         c.commit()
         new = appt_with_topic(c, old["id"])
 
@@ -434,6 +450,8 @@ async def appt_cancel(request: Request, user):
             return redirect("/calendar")
         c.execute("UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?",
                   (appt["id"],))
+        audit.record(user, audit.CANCEL, appointment_id=appt["id"], conn=c,
+                     detail={"day": appt["day"], "start": appt["start_time"], "doctor_id": appt["doctor_id"]})
     request.session["flash"] = f"نوبت لغو شد و به {STAFF_LABEL} اطلاع داده شد."
     return RedirectResponse(f"/day/{jalali.jstr(date.fromisoformat(appt['day']))}", status_code=303,
                             background=BackgroundTask(notify.appointment_event, "cancelled", appt))
@@ -459,6 +477,8 @@ async def appt_set_status(request: Request, user):
         c.execute(
             "UPDATE appointments SET status = ?, updated_at = datetime('now') WHERE id = ?",
             (new_status, appt_id))
+        audit.record(user, audit.STATUS_CHANGE, appointment_id=appt_id, conn=c,
+                     detail={"from": appt["status"], "to": new_status})
     label = schedule.status_label(new_status)
     request.session["flash"] = f"وضعیت نوبت: {label}"
     if user["is_admin"]:
@@ -485,6 +505,8 @@ async def schedule_settings(request: Request, user):
                     err = "ساعت پایان باید بعد از ساعت شروع باشد."
                 else:
                     schedule.set_hours(c, schedule.CLINIC, start, end)
+                    audit.record(user, audit.SCHEDULE_HOURS, conn=c,
+                                 detail={"scope": "clinic", "start": start, "end": end})
                     request.session["flash"] = "ساعت کاری کلینیک ذخیره شد."
             elif action == "staff_hours":
                 try:
@@ -498,6 +520,8 @@ async def schedule_settings(request: Request, user):
                     err = f"{STAFF_LABEL} را انتخاب کنید."
                 elif form.get("use_default") == "1":
                     schedule.clear_staff_hours(c, doctor_id)
+                    audit.record(user, audit.SCHEDULE_HOURS, conn=c,
+                                 detail={"scope": "staff", "doctor_id": doctor_id, "cleared": True})
                     request.session["flash"] = "بازهٔ اختصاصی برداشته شد؛ از پیش‌فرض کلینیک استفاده می‌شود."
                 else:
                     start = jalali.en_digits(str(form.get("start_time", ""))).strip()
@@ -508,6 +532,9 @@ async def schedule_settings(request: Request, user):
                         err = "ساعت پایان باید بعد از ساعت شروع باشد."
                     else:
                         schedule.set_hours(c, doctor_id, start, end)
+                        audit.record(user, audit.SCHEDULE_HOURS, conn=c,
+                                     detail={"scope": "staff", "doctor_id": doctor_id,
+                                             "start": start, "end": end})
                         request.session["flash"] = "ساعت کاری همکار ذخیره شد."
             elif action == "add_blocked":
                 try:
@@ -528,6 +555,8 @@ async def schedule_settings(request: Request, user):
                 if not err:
                     day = jalali.to_gregorian(jy, jm, jd).isoformat()
                     schedule.add_blocked(c, day, doctor_id, reason)
+                    audit.record(user, audit.SCHEDULE_BLOCK, conn=c,
+                                 detail={"op": "add", "day": day, "doctor_id": doctor_id})
                     request.session["flash"] = "روز بسته ثبت شد. نوبت‌دهی در این روز همچنان ممکن است؛ هنگام ثبت هشدار نشان داده می‌شود."
             elif action == "remove_blocked":
                 try:
@@ -535,6 +564,8 @@ async def schedule_settings(request: Request, user):
                 except ValueError:
                     bid = 0
                 schedule.remove_blocked(c, bid)
+                audit.record(user, audit.SCHEDULE_BLOCK, conn=c,
+                             detail={"op": "remove", "blocked_id": bid})
                 request.session["flash"] = "روز بسته حذف شد."
             else:
                 err = "درخواست نامعتبر است."
@@ -633,10 +664,17 @@ async def user_edit(request: Request, user):
         if err:
             return render(request, "user_form.html", user, u=u, v=v, error=err,
                           ntfy_public=NTFY_PUBLIC_URL, status_code=400)
+        was_active = bool(u["active"])
         c.execute("UPDATE users SET name = ?, is_admin = ?, is_doctor = ?, active = ? WHERE id = ?",
                   (v["name"], int(v["is_admin"]), int(v["is_doctor"]), int(v["active"]), uid))
         if v["password"]:
             c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (db.hash_password(v["password"]), uid))
+        if was_active and not v["active"]:
+            audit.record(user, audit.USER_DEACTIVATE, conn=c,
+                         detail={"target_user_id": uid, "username": u["username"]})
+        elif (not was_active) and v["active"]:
+            audit.record(user, audit.USER_ACTIVATE, conn=c,
+                         detail={"target_user_id": uid, "username": u["username"]})
     return redirect(f"/users/{uid}/edit", "ذخیره شد.", request)
 
 
@@ -655,6 +693,10 @@ async def user_delete(request: Request, user):
         if not u["active"]:
             return redirect("/users", f"{u['name']} از قبل غیرفعال است.", request)
         c.execute("UPDATE users SET active = 0 WHERE id = ?", (uid,))
+        uname = c.execute("SELECT username FROM users WHERE id = ?", (uid,)).fetchone()
+        audit.record(user, audit.USER_DEACTIVATE, conn=c,
+                     detail={"target_user_id": uid,
+                             "username": uname["username"] if uname else ""})
     return redirect("/users", f"{u['name']} غیرفعال شد. نوبت‌ها نگه داشته شدند.", request)
 
 
@@ -691,6 +733,35 @@ async def notif_test(request: Request, user):
     await form_checked(request)
     ok = await notify.send(user["ntfy_topic"], "آزمایش اعلان", "اعلان‌های پنل نوبت روی این گوشی کار می‌کند.", "white_check_mark")
     return redirect("/notifications", "اعلان آزمایشی فرستاده شد." if ok else "ارسال اعلان ناموفق بود. به مدیر پنل خبر دهید.", request)
+
+
+
+# ---------------------------------------------------------------- audit log (admin)
+@login_required(admin=True)
+async def audit_log_view(request: Request, user):
+    """Admin-only append-only log. Filter by Gregorian day and/or actor."""
+    day_q = jalali.en_digits(request.query_params.get("day", "")).strip()
+    actor_q = jalali.en_digits(request.query_params.get("actor", "")).strip()
+    day_filter = day_q if day_q and len(day_q) == 10 else None
+    actor_id = None
+    if actor_q:
+        try:
+            actor_id = int(actor_q)
+        except ValueError:
+            actor_id = None
+    with db.db() as c:
+        rows = audit.list_entries(c, day=day_filter, actor_user_id=actor_id, limit=200)
+        actors = c.execute(
+            "SELECT DISTINCT actor_user_id AS id, actor_username AS username "
+            "FROM audit_log WHERE actor_user_id IS NOT NULL "
+            "ORDER BY actor_username"
+        ).fetchall()
+        # Also list current admins so the filter is usable before any events.
+        admins = c.execute(
+            "SELECT id, username, name FROM users WHERE is_admin = 1 ORDER BY name"
+        ).fetchall()
+    return render(request, "audit.html", user, rows=rows, actors=actors, admins=admins,
+                  day=day_filter or "", actor=str(actor_id or ""))
 
 
 # ---------------------------------------------------------------- PWA files & health
@@ -751,6 +822,7 @@ routes = [
     Route("/appointments/{id:int}/cancel", appt_cancel, methods=["POST"]),
     Route("/appointments/{id:int}/status", appt_set_status, methods=["POST"]),
     Route("/schedule", schedule_settings, methods=["GET", "POST"]),
+    Route("/audit", audit_log_view),
     Route("/users", users_list),
     Route("/users/new", user_new, methods=["GET", "POST"]),
     Route("/users/{id:int}/edit", user_edit, methods=["GET", "POST"]),

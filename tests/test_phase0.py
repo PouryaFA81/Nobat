@@ -51,16 +51,14 @@ class MigrateTests(unittest.TestCase):
         db.init()
         mig_dir = Path(self.dir) / "migrations"
         mig_dir.mkdir()
-        script = mig_dir / "0004_phase0_test.sql"
+        probe_ver = db.SCHEMA_VERSION + 1
+        script = mig_dir / f"{probe_ver:04d}_phase0_test.sql"
         script.write_text(
             "CREATE TABLE IF NOT EXISTS phase0_probe (id INTEGER PRIMARY KEY);\n",
             encoding="utf-8",
         )
         with mock.patch.object(db, "MIGRATIONS_DIR", mig_dir):
-            # Pretend a newer 0004 exists as pending: baseline already recorded, so
-            # patch _migration_files to include both stamped and new.
-            real_files = db._migration_files
-            # Use the real migrations dir for 0001 already applied; only add 0004 from temp.
+            # Pretend a newer script exists as pending: current SCHEMA already recorded.
             combined = Path(db.__file__).parent / "migrations"
 
             def files():
@@ -70,14 +68,14 @@ class MigrateTests(unittest.TestCase):
                     m = re.match(r"^(\d+)_(.+)\.sql$", path.name)
                     if m:
                         out.append((int(m.group(1)), m.group(2), path))
-                out.append((4, "phase0_test", script))
+                out.append((probe_ver, "phase0_test", script))
                 return sorted(out)
 
             with mock.patch.object(db, "_migration_files", files):
                 applied = db.migrate()
-        self.assertEqual(applied, [4])
+        self.assertEqual(applied, [probe_ver])
         with db.db() as c:
-            self.assertEqual(db.current_migration_version(c), 4)
+            self.assertEqual(db.current_migration_version(c), probe_ver)
             self.assertIsNotNone(c.execute(
                 "SELECT 1 FROM sqlite_master WHERE name='phase0_probe'").fetchone())
 
