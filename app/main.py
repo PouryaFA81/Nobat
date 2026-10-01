@@ -462,9 +462,7 @@ async def user_edit(request: Request, user):
         if not u:
             return redirect("/users")
         if request.method == "GET":
-            n_appts = c.execute("SELECT COUNT(*) FROM appointments WHERE doctor_id = ?", (uid,)).fetchone()[0]
-            return render(request, "user_form.html", user, u=u, v=dict(u), ntfy_public=NTFY_PUBLIC_URL,
-                          n_appts=n_appts)
+            return render(request, "user_form.html", user, u=u, v=dict(u), ntfy_public=NTFY_PUBLIC_URL)
         v = _user_form_values(await form_checked(request))
         err = None
         if not v["name"]:
@@ -485,20 +483,20 @@ async def user_edit(request: Request, user):
 
 @login_required(admin=True)
 async def user_delete(request: Request, user):
-    """Permanently delete a colleague and all of their appointments.
-    No notifications are sent. You cannot delete your own account."""
+    """Soft-delete: deactivate the colleague. Appointments are kept.
+    Permanent removal is only available via: python -m app.manage delete-user."""
     await form_checked(request)
     uid = int(request.path_params["id"])
     if uid == user["id"]:
-        return redirect(f"/users/{uid}/edit", "نمی‌توانید حساب خودتان را حذف کنید.", request)
+        return redirect(f"/users/{uid}/edit", "نمی‌توانید حساب خودتان را غیرفعال کنید.", request)
     with db.db() as c:
-        u = c.execute("SELECT name FROM users WHERE id = ?", (uid,)).fetchone()
+        u = c.execute("SELECT name, active FROM users WHERE id = ?", (uid,)).fetchone()
         if not u:
             return redirect("/users")
-        c.execute("DELETE FROM appointments WHERE doctor_id = ?", (uid,))
-        c.execute("UPDATE appointments SET created_by = NULL WHERE created_by = ?", (uid,))
-        c.execute("DELETE FROM users WHERE id = ?", (uid,))
-    return redirect("/users", f"{u['name']} و نوبت‌هایش حذف شد.", request)
+        if not u["active"]:
+            return redirect("/users", f"{u['name']} از قبل غیرفعال است.", request)
+        c.execute("UPDATE users SET active = 0 WHERE id = ?", (uid,))
+    return redirect("/users", f"{u['name']} غیرفعال شد. نوبت‌ها نگه داشته شدند.", request)
 
 
 # ---------------------------------------------------------------- own account

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Database migration runner (`schema_migrations`, `python -m app.manage migrate`) with baseline `0001`.
+- `backup` default path under `data/backups/`, plus `backup-prune` (default 14 days) and safe `restore` (`--force` / `--to`).
+- Soft-delete (deactivate) as the default user removal path; hard delete only via `delete-user --confirm YES`.
+
+### Changed
+- User edit UI no longer offers permanent delete; appointments are retained when a colleague is deactivated.
+
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
