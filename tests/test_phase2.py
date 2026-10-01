@@ -65,7 +65,6 @@ class Phase2AuditHelpers(unittest.TestCase):
             def commit(self):
                 pass
 
-        # Separate-connection path: patch db.db context to raise on insert
         with mock.patch.object(db, "db") as mdb:
             class Ctx:
                 def __enter__(self):
@@ -76,7 +75,6 @@ class Phase2AuditHelpers(unittest.TestCase):
 
             mdb.return_value = Ctx()
             audit.record({"id": uid, "username": "a"}, audit.BOOK, appointment_id=1)
-        # Still alive; no exception
 
     def test_record_on_shared_connection(self):
         with db.db() as c:
@@ -178,7 +176,6 @@ class Phase2PanelTests(unittest.TestCase):
         with db.db() as c:
             appt_id = c.execute("SELECT id FROM appointments").fetchone()[0]
         r = a.get(f"/day/{jalali.jstr(self.future_day()[0])}")
-        # status change
         r = a.post(f"/appointments/{appt_id}/status",
                    data={"csrf": csrf(r), "status": "arrived"})
         self.assertEqual(r.status_code, 303)
@@ -217,6 +214,86 @@ class Phase2PanelTests(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertIn("tempuser", row["detail"])
 
+
+class Phase2ReminderTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._db_dir = tempfile.mkdtemp()
+        cls._old_db = db.DB_PATH
+        db.DB_PATH = os.path.join(cls._db_dir, "remind.db")
+        cls.patches = [mock.patch.object(notify, "send", fake_send),
+                       mock.patch.object(notify, "reminder_loop", idle_loop)]
+        for p in cls.patches:
+            p.start()
+        db.init()
+        with db.db() as c:
+            cls.doc_id = db.create_user(c, "doc2", "دکتر", "docpass12")
+
+    @classmethod
+    def tearDownClass(cls):
+        for p in cls.patches:
+            p.stop()
+        db.DB_PATH = cls._old_db
+
+    def setUp(self):
+        SENT.clear()
+        with db.db() as c:
+            c.execute("DELETE FROM appointments")
+
+    def _insert(self, day, reminder_sent=0, start="09:00", initials="الف"):
+        with db.db() as c:
+            c.execute(
+                "INSERT INTO appointments (doctor_id, initials, day, start_time, duration_min, "
+                "status, reminder_sent) VALUES (?, ?, ?, ?, 60, 'active', ?)",
+                (self.doc_id, initials, day, start, reminder_sent),
+            )
+            return c.execute("SELECT id FROM appointments ORDER BY id DESC").fetchone()[0]
+
+    def test_evening_tomorrow_idempotent(self):
+        today = notify.now_local().date()
+        tomorrow = (today + timedelta(days=1)).isoformat()
+        self._insert(tomorrow)
+        evening = datetime.combine(today, datetime.min.time()).replace(hour=notify.REMINDER_HOUR)
+        with mock.patch.object(notify, "now_local", return_value=evening):
+            asyncio.run(notify.send_due_reminders())
+            asyncio.run(notify.send_due_reminders())
+        reminders = [s for s in SENT if "یادآوری" in s["title"]]
+        self.assertEqual(len(reminders), 1)
+        self.assertIn("فردا", reminders[0]["title"])
+
+    def test_catchup_after_missed_midnight(self):
+        """Process down past midnight: day is today, reminder_sent still 0."""
+        today = notify.now_local().date()
+        self._insert(today.isoformat(), reminder_sent=0)
+        morning = datetime.combine(today, datetime.min.time()).replace(hour=8)
+        self.assertLess(morning.hour, notify.REMINDER_HOUR)
+        with mock.patch.object(notify, "now_local", return_value=morning):
+            asyncio.run(notify.send_due_reminders())
+            asyncio.run(notify.send_due_reminders())
+        reminders = [s for s in SENT if "یادآوری" in s["title"]]
+        self.assertEqual(len(reminders), 1)
+        self.assertIn("امروز", reminders[0]["title"])
+        with db.db() as c:
+            sent = c.execute("SELECT reminder_sent FROM appointments").fetchone()[0]
+        self.assertEqual(sent, 1)
+
+    def test_catchup_does_not_run_after_reminder_hour_for_today(self):
+        """After REMINDER_HOUR we only target tomorrow (today catch-up window closed)."""
+        today = notify.now_local().date()
+        self._insert(today.isoformat(), reminder_sent=0)
+        evening = datetime.combine(today, datetime.min.time()).replace(hour=notify.REMINDER_HOUR)
+        with mock.patch.object(notify, "now_local", return_value=evening):
+            asyncio.run(notify.send_due_reminders())
+        today_reminders = [s for s in SENT if "امروز" in s["title"]]
+        self.assertEqual(today_reminders, [])
+
+    def test_already_sent_not_resent_on_catchup(self):
+        today = notify.now_local().date()
+        self._insert(today.isoformat(), reminder_sent=1)
+        morning = datetime.combine(today, datetime.min.time()).replace(hour=7)
+        with mock.patch.object(notify, "now_local", return_value=morning):
+            asyncio.run(notify.send_due_reminders())
+        self.assertEqual(SENT, [])
 
 
 if __name__ == "__main__":

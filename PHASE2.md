@@ -9,6 +9,11 @@
 - Fail-safe writes: audit failures are logged; booking / mutation still succeeds (SQLite savepoint when sharing a connection).
 - Admin-only Persian UI: **گزارش فعالیت** at `/audit` — filter by Gregorian day (`YYYY-MM-DD`) and actor.
 
+### 2.2 Reminder durability
+- Evening loop still sends “tomorrow” reminders from `REMINDER_HOUR` onward (idempotent via `reminder_sent`).
+- **Catch-up:** if the process was down past midnight, appointments for *today* with `reminder_sent = 0` are sent once before `REMINDER_HOUR`, worded as امروز.
+- Same-day bookings already set `reminder_sent` via `reminder_flag`, so they are not re-notified. Notes never appear in notifications.
+
 ## How to view the audit log
 
 1. Log in as admin.
@@ -25,3 +30,4 @@ python -m unittest discover -s tests -t . -v
 ## Rollback notes
 
 - **0004** is additive (`CREATE TABLE IF NOT EXISTS`). Rolling back app code leaves the table unused.
+- Catch-up reminder behaviour is app-only; no schema change for 2.2.

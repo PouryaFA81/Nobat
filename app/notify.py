@@ -68,30 +68,55 @@ async def appointment_event(kind: str, appt: dict, old: dict | None = None):
                    f"{old['initials']} — {_when(old['day'], old['start_time'])}\n(به همکار دیگری منتقل شد)", "x")
 
 
-async def send_due_reminders():
-    """From REMINDER_HOUR onward each evening, send each staff member one
-    message listing tomorrow's sessions. Each appointment is reminded once."""
-    now = now_local()
-    if now.hour < REMINDER_HOUR:
-        return
-    tomorrow = (now.date() + timedelta(days=1)).isoformat()
+async def _send_reminders_for_day(day_iso: str, *, kind: str) -> None:
+    """Send one grouped reminder per staff for appointments on day_iso.
+
+    kind: "tomorrow" (evening run) or "today" (catch-up after a missed evening).
+    Idempotent via reminder_sent. Never includes appointment notes.
+    """
     with db.db() as c:
         rows = c.execute(
             "SELECT a.id, a.initials, a.start_time, a.doctor_id, u.ntfy_topic "
             "FROM appointments a JOIN users u ON u.id = a.doctor_id "
             "WHERE a.day = ? AND a.status = 'active' AND a.reminder_sent = 0 AND u.active = 1 "
-            "ORDER BY a.start_time", (tomorrow,)).fetchall()
+            "ORDER BY a.start_time", (day_iso,)).fetchall()
+    if not rows:
+        return
     by_doctor: dict[int, list] = {}
     for r in rows:
         by_doctor.setdefault(r["doctor_id"], []).append(r)
+    when_word = "امروز" if kind == "today" else "فردا"
+    day_label = long_date(datetime.strptime(day_iso, "%Y-%m-%d").date())
     for items in by_doctor.values():
         lines = [f"ساعت {fa(r['start_time'])} — {r['initials']}" for r in items]
-        title = f"یادآوری: فردا {fa(len(items))} جلسه دارید"
-        body = long_date(datetime.strptime(tomorrow, "%Y-%m-%d").date()) + "\n" + "\n".join(lines)
+        title = f"یادآوری: {when_word} {fa(len(items))} جلسه دارید"
+        body = day_label + "\n" + "\n".join(lines)
         if await send(items[0]["ntfy_topic"], title, body, "bell"):
             with db.db() as c:
                 c.executemany("UPDATE appointments SET reminder_sent = 1 WHERE id = ?",
                               [(r["id"],) for r in items])
+
+
+async def send_due_reminders():
+    """Evening reminders for the next calendar day, plus catch-up for misses.
+
+    Normal: from REMINDER_HOUR onward, send each staff member one message
+    listing tomorrow's sessions (reminder_sent stays the idempotency key).
+
+    Catch-up: if the process was down past midnight, appointments for *today*
+    may still have reminder_sent = 0 (the "tomorrow" window already passed).
+    Until REMINDER_HOUR that morning/day, send those once, worded as امروز.
+    Same-day bookings already set reminder_sent via reminder_flag, so they
+    are not re-notified. Notes are never included.
+    """
+    now = now_local()
+    today = now.date()
+    # Catch-up window: before tonight's REMINDER_HOUR, recover missed "evening before".
+    if now.hour < REMINDER_HOUR:
+        await _send_reminders_for_day(today.isoformat(), kind="today")
+    if now.hour >= REMINDER_HOUR:
+        tomorrow = (today + timedelta(days=1)).isoformat()
+        await _send_reminders_for_day(tomorrow, kind="tomorrow")
 
 
 async def reminder_loop():
