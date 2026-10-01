@@ -10,6 +10,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!window.confirm(f.dataset.confirm)) e.preventDefault();
     })
   );
+  // Print day sheet / schedule
+  document.querySelectorAll("[data-print]").forEach((b) =>
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      window.print();
+    })
+  );
   // Copy buttons
   document.querySelectorAll("[data-copy]").forEach((b) =>
     b.addEventListener("click", async (e) => {

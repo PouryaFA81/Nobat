@@ -3,7 +3,8 @@
 <div class="bar">
   <h1 class="month">{{ 'نوبت‌های ۳۰ روز گذشته' if past else 'نوبت‌های پیش رو' }}</h1>
 </div>
-<div class="actions">
+<div class="actions no-print">
+  <button type="button" class="btn ghost" data-print>چاپ</button>
   {% if past %}<a class="btn ghost" href="/me">نوبت‌های پیش رو</a>
   {% else %}<a class="btn ghost" href="/me?past=1">نوبت‌های گذشته</a>{% endif %}
 </div>
