@@ -1,0 +1,200 @@
+/* Nobat theme tokens — draft for wiring into app/static
+ *
+ * Usage (suggested):
+ *   <html lang="fa" dir="rtl" data-theme="yaru-orange" data-mode="dark">
+ *
+ * Toggle sets data-mode to "light" | "dark".
+ * Later palettes: data-theme="teal" | "slate" | … (same variable names).
+ *
+ * Keeps existing var names (--bg, --card, --brand, …) so style.css
+ * consumers need minimal changes. Adds neumorphism shadow tokens.
+ */
+
+/* ---------- shared structure (not palette-specific) ---------- */
+:root {
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+  --neu-distance: 6px;
+  --neu-blur: 12px;
+  --focus-ring: 2px solid var(--brand);
+}
+
+/* Soft raised / pressed surfaces */
+:root {
+  --shadow-out:
+    var(--neu-distance) var(--neu-distance) var(--neu-blur) var(--shadow-dark),
+    calc(var(--neu-distance) * -1) calc(var(--neu-distance) * -1) var(--neu-blur) var(--shadow-light);
+  --shadow-in:
+    inset var(--neu-distance) var(--neu-distance) var(--neu-blur) var(--shadow-dark),
+    inset calc(var(--neu-distance) * -1) calc(var(--neu-distance) * -1) var(--neu-blur) var(--shadow-light);
+  --shadow-out-sm:
+    3px 3px 8px var(--shadow-dark),
+    -3px -3px 8px var(--shadow-light);
+  --shadow-in-sm:
+    inset 3px 3px 8px var(--shadow-dark),
+    inset -3px -3px 8px var(--shadow-light);
+}
+
+/* ============================================================
+   Palette: yaru-orange  (reference: Ubuntu Yaru Dark Orange)
+   Accent ~ #E95420 family; surfaces stay soft for neumorphism.
+   ============================================================ */
+
+/* Light */
+[data-theme="yaru-orange"][data-mode="light"],
+[data-theme="yaru-orange"]:not([data-mode]) {
+  --bg: #ece8e4;
+  --card: #ece8e4;
+  --surface-raised: #ece8e4;
+  --ink: #2c2c2c;
+  --muted: #6e6a66;
+  --line: transparent; /* neu uses shadow, not hard borders */
+  --brand: #e95420;
+  --brand-ink: #ffffff;
+  --brand-soft: #f5ddd2;
+  --danger: #c7162b;
+  --danger-soft: #f6d6d9;
+  --today: #ffe8d6;
+  --shadow-dark: #cfcbc7;
+  --shadow-light: #ffffff;
+  /* status accents (appointments) */
+  --status-arrived: #0e8420;
+  --status-completed: #335280;
+  --status-no-show: #c47a00;
+}
+
+/* Dark */
+[data-theme="yaru-orange"][data-mode="dark"] {
+  --bg: #2b2927;
+  --card: #2b2927;
+  --surface-raised: #2b2927;
+  --ink: #f2f0ed;
+  --muted: #a8a29e;
+  --line: transparent;
+  --brand: #ff7a4d; /* slightly lifted for dark contrast */
+  --brand-ink: #1a120f;
+  --brand-soft: #3d2a22;
+  --danger: #f0707a;
+  --danger-soft: #3d2226;
+  --today: #3d3024;
+  --shadow-dark: #1f1d1b;
+  --shadow-light: #373431;
+  --status-arrived: #5dcf6e;
+  --status-completed: #7aa0d4;
+  --status-no-show: #e0a03a;
+}
+
+/* ============================================================
+   Palette: teal  (closer to current Nobat brand, for choice #2)
+   ============================================================ */
+
+[data-theme="teal"][data-mode="light"],
+[data-theme="teal"]:not([data-mode]) {
+  --bg: #e8eeec;
+  --card: #e8eeec;
+  --surface-raised: #e8eeec;
+  --ink: #1f2a2a;
+  --muted: #6b7575;
+  --line: transparent;
+  --brand: #2f6f6a;
+  --brand-ink: #ffffff;
+  --brand-soft: #d5e6e3;
+  --danger: #b3413a;
+  --danger-soft: #f0d8d6;
+  --today: #fff0c8;
+  --shadow-dark: #c5ccc9;
+  --shadow-light: #ffffff;
+  --status-arrived: #3a8f6e;
+  --status-completed: #5a7a9a;
+  --status-no-show: #b07a3a;
+}
+
+[data-theme="teal"][data-mode="dark"] {
+  --bg: #151a1a;
+  --card: #151a1a;
+  --surface-raised: #151a1a;
+  --ink: #e8ecea;
+  --muted: #9aa5a3;
+  --line: transparent;
+  --brand: #5fb3aa;
+  --brand-ink: #0f1515;
+  --brand-soft: #1f3432;
+  --danger: #e0766d;
+  --danger-soft: #3a2320;
+  --today: #3a3420;
+  --shadow-dark: #0c1010;
+  --shadow-light: #1e2626;
+  --status-arrived: #5dcf6e;
+  --status-completed: #7aa0d4;
+  --status-no-show: #e0a03a;
+}
+
+/* ============================================================
+   Neumorphism component helpers (apply in style.css gradually)
+   ============================================================ */
+
+.neu-raised {
+  background: var(--surface-raised);
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-out);
+}
+
+.neu-pressed {
+  background: var(--surface-raised);
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-in);
+}
+
+.neu-btn {
+  background: var(--surface-raised);
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-out-sm);
+  color: var(--ink);
+  min-height: 42px;
+  padding: 6px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+.neu-btn:active {
+  box-shadow: var(--shadow-in-sm);
+}
+.neu-btn.primary {
+  background: var(--brand);
+  color: var(--brand-ink);
+  box-shadow: var(--shadow-out-sm);
+  font-weight: 700;
+}
+
+/* Prefer soft fill over flat header bar in neu chrome */
+.top.neu {
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-out-sm);
+}
+.top.neu a { color: var(--ink); }
+.top.neu .brand { color: var(--brand); }
+
+/* Default when no data-theme set: yaru-orange light */
+:root:not([data-theme]) {
+  --bg: #ece8e4;
+  --card: #ece8e4;
+  --surface-raised: #ece8e4;
+  --ink: #2c2c2c;
+  --muted: #6e6a66;
+  --line: transparent;
+  --brand: #e95420;
+  --brand-ink: #ffffff;
+  --brand-soft: #f5ddd2;
+  --danger: #c7162b;
+  --danger-soft: #f6d6d9;
+  --today: #ffe8d6;
+  --shadow-dark: #cfcbc7;
+  --shadow-light: #ffffff;
+  --status-arrived: #0e8420;
+  --status-completed: #335280;
+  --status-no-show: #c47a00;
+}

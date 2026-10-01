@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Neumorphism theme tokens (`themes.css`): yaru-orange (default) and teal palettes; light/dark via `data-theme` / `data-mode`; chrome toggles (روشن/تیره + پالت) with localStorage.
 - ICS download for staff `/me` and coordinator day view (no private notes in DESCRIPTION).
 - Receptionist role (`is_receptionist`, migration `0005`): book/manage appointments without user/admin settings.
 - Recurring weekly series (`series_id`, migration `0006`): create N weeks; cancel one or whole series; overlap refuses series.
@@ -21,6 +22,7 @@
 - Soft-delete (deactivate) as the default user removal path; hard delete only via `delete-user --confirm YES`.
 
 ### Changed
+- UI surfaces use soft neumorphic shadows instead of hard borders; system `prefers-color-scheme` dark override replaced by explicit mode toggle (see PHASE_UI.md).
 - Booking validation enforces working hours; blocked days warn but do not refuse; overlap treats only cancelled as free.
 - User edit UI no longer offers permanent delete; appointments are retained when a colleague is deactivated.
 
