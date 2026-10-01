@@ -21,12 +21,12 @@ from starlette.background import BackgroundTask
 from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, PlainTextResponse, RedirectResponse
+from starlette.responses import FileResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from . import __version__, audit, db, jalali, notify, schedule
+from . import __version__, audit, db, export_csv, jalali, notify, schedule
 from .jalali import fa
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -61,6 +61,15 @@ templates.env.globals.update(MONTHS=jalali.MONTHS, STAFF=STAFF_LABEL, STAFF_PL=S
 DURATIONS = [15, 30, 45, 60, 75, 90, 120]
 HOURS = list(range(6, 24))
 MINUTES = list(range(0, 60, 5))
+YEAR_SPAN = 5  # Jalali year select: today ± YEAR_SPAN
+
+
+def year_choices(center: date | None = None) -> list[int]:
+    """Wider year picker for booking / schedule forms (±YEAR_SPAN around today)."""
+    d = center or today()
+    ty = jalali.to_jalali(d)[0]
+    return list(range(ty - YEAR_SPAN, ty + YEAR_SPAN + 1))
+
 
 
 # ---------------------------------------------------------------- helpers
@@ -273,7 +282,9 @@ async def day_view(request: Request, user):
     except Exception:
         return redirect("/calendar")
     doctor_id = request.query_params.get("doctor", "")
-    q = ("SELECT a.*, u.name AS doctor_name FROM appointments a JOIN users u ON u.id = a.doctor_id "
+    q = ("SELECT a.*, u.name AS doctor_name, cu.name AS created_by_name "
+         "FROM appointments a JOIN users u ON u.id = a.doctor_id "
+         "LEFT JOIN users cu ON cu.id = a.created_by "
          "WHERE a.day = ?")
     args: list = [d.isoformat()]
     if doctor_id.isdigit():
@@ -345,7 +356,7 @@ def _form_ctx(c, v, title, action, appt=None):
     t = today()
     ty = jalali.to_jalali(t)[0]
     return dict(v=v, title=title, action=action, appt=appt, docs=doctors(c),
-                years=[ty - 1, ty, ty + 1], hours=HOURS, minutes=MINUTES, durations=DURATIONS)
+                years=year_choices(t), hours=HOURS, minutes=MINUTES, durations=DURATIONS)
 
 
 @login_required(admin=True)
@@ -584,7 +595,7 @@ async def schedule_settings(request: Request, user):
                 return render(request, "schedule.html", user, error=err, status_code=400,
                               clinic_start=clinic[0], clinic_end=clinic[1],
                               docs=docs, staff_hours=staff_hours, blocked=blocked,
-                              years=[ty - 1, ty, ty + 1], jy=ty, jm=jalali.to_jalali(t)[1], jd=1)
+                              years=year_choices(t), jy=ty, jm=jalali.to_jalali(t)[1], jd=1)
             return redirect("/schedule", request=request)
 
         clinic = schedule.get_hours(c, schedule.CLINIC)
@@ -601,7 +612,7 @@ async def schedule_settings(request: Request, user):
     return render(request, "schedule.html", user,
                   clinic_start=clinic[0], clinic_end=clinic[1],
                   docs=docs, staff_hours=staff_hours, blocked=blocked,
-                  years=[ty - 1, ty, ty + 1], jy=ty, jm=tm, jd=1)
+                  years=year_choices(t), jy=ty, jm=tm, jd=1)
 
 
 # ---------------------------------------------------------------- coordinator: users
@@ -736,6 +747,114 @@ async def notif_test(request: Request, user):
 
 
 
+# ---------------------------------------------------------------- CSV export (admin)
+@login_required(admin=True)
+async def export_form(request: Request, user):
+    """Persian UI: Jalali date range → CSV download. Notes excluded by default."""
+    t = today()
+    ty, tm, td = jalali.to_jalali(t)
+    # Default range: start of current Jalali month → today
+    start = jalali.to_gregorian(ty, tm, 1)
+    with db.db() as c:
+        docs = doctors(c)
+    include_notes = request.query_params.get("notes") == "1"
+    return render(
+        request, "export.html", user,
+        docs=docs, years=year_choices(t),
+        from_jy=ty, from_jm=tm, from_jd=1,
+        to_jy=ty, to_jm=tm, to_jd=td,
+        doctor_id=request.query_params.get("doctor", ""),
+        include_notes=include_notes,
+    )
+
+
+@login_required(admin=True)
+async def export_csv_download(request: Request, user):
+    """Download appointments CSV for a Jalali (or Gregorian) inclusive range."""
+    qp = request.query_params
+    err = None
+    day_from = day_to = None
+    # Prefer Jalali parts; fall back to Gregorian YYYY-MM-DD if provided.
+    g_from = jalali.en_digits(qp.get("from", "")).strip()
+    g_to = jalali.en_digits(qp.get("to", "")).strip()
+    try:
+        if g_from and g_to and len(g_from) == 10 and len(g_to) == 10 and g_from[4] == "-":
+            day_from = date.fromisoformat(g_from)
+            day_to = date.fromisoformat(g_to)
+        else:
+            fy, fm, fd = (int(jalali.en_digits(str(qp.get(k, "")))) for k in ("from_jy", "from_jm", "from_jd"))
+            ty_, tm_, td_ = (int(jalali.en_digits(str(qp.get(k, "")))) for k in ("to_jy", "to_jm", "to_jd"))
+            if not (jalali.valid(fy, fm, fd) and jalali.valid(ty_, tm_, td_)):
+                err = "بازهٔ تاریخ نامعتبر است."
+            else:
+                day_from = jalali.to_gregorian(fy, fm, fd)
+                day_to = jalali.to_gregorian(ty_, tm_, td_)
+    except Exception:
+        err = "بازهٔ تاریخ را کامل کنید."
+    if not err and day_from and day_to and day_from > day_to:
+        err = "تاریخ شروع نباید بعد از تاریخ پایان باشد."
+    doctor_id = None
+    doc_q = qp.get("doctor", "").strip()
+    if doc_q.isdigit():
+        doctor_id = int(doc_q)
+    include_notes = qp.get("notes") == "1"
+    if err:
+        t = today()
+        ty, tm, td = jalali.to_jalali(t)
+        with db.db() as c:
+            docs = doctors(c)
+        return render(
+            request, "export.html", user, error=err, status_code=400,
+            docs=docs, years=year_choices(t),
+            from_jy=qp.get("from_jy", ty), from_jm=qp.get("from_jm", tm), from_jd=qp.get("from_jd", 1),
+            to_jy=qp.get("to_jy", ty), to_jm=qp.get("to_jm", tm), to_jd=qp.get("to_jd", td),
+            doctor_id=doc_q, include_notes=include_notes,
+        )
+    with db.db() as c:
+        rows = export_csv.fetch_rows(
+            c, day_from.isoformat(), day_to.isoformat(), doctor_id=doctor_id)
+        body = export_csv.build_csv(rows, staff_header=STAFF_LABEL, include_notes=include_notes)
+    fname = f"nobat-{jalali.jstr(day_from)}_{jalali.jstr(day_to)}.csv"
+    return Response(
+        body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+# ---------------------------------------------------------------- initials search
+@login_required()
+async def search_appointments(request: Request, user):
+    """Search by client initials. Admin: all; staff: own schedule only."""
+    q = str(request.query_params.get("q", "")).strip()[:30]
+    rows = []
+    if len(q) >= 1:
+        like = f"%{q}%"
+        with db.db() as c:
+            if user["is_admin"]:
+                rows = c.execute(
+                    "SELECT a.*, u.name AS doctor_name, cu.name AS created_by_name "
+                    "FROM appointments a JOIN users u ON u.id = a.doctor_id "
+                    "LEFT JOIN users cu ON cu.id = a.created_by "
+                    "WHERE a.initials LIKE ? "
+                    "ORDER BY a.day DESC, a.start_time LIMIT 200",
+                    (like,),
+                ).fetchall()
+            else:
+                rows = c.execute(
+                    "SELECT a.*, u.name AS doctor_name, cu.name AS created_by_name "
+                    "FROM appointments a JOIN users u ON u.id = a.doctor_id "
+                    "LEFT JOIN users cu ON cu.id = a.created_by "
+                    "WHERE a.doctor_id = ? AND a.initials LIKE ? "
+                    "ORDER BY a.day DESC, a.start_time LIMIT 200",
+                    (user["id"], like),
+                ).fetchall()
+    return render(request, "search.html", user, q=q, rows=rows)
+
+
 # ---------------------------------------------------------------- audit log (admin)
 @login_required(admin=True)
 async def audit_log_view(request: Request, user):
@@ -823,6 +942,9 @@ routes = [
     Route("/appointments/{id:int}/status", appt_set_status, methods=["POST"]),
     Route("/schedule", schedule_settings, methods=["GET", "POST"]),
     Route("/audit", audit_log_view),
+    Route("/export", export_form),
+    Route("/export.csv", export_csv_download),
+    Route("/search", search_appointments),
     Route("/users", users_list),
     Route("/users/new", user_new, methods=["GET", "POST"]),
     Route("/users/{id:int}/edit", user_edit, methods=["GET", "POST"]),
