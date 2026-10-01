@@ -23,6 +23,7 @@
 
 ### Changed
 - UI surfaces use soft neumorphic shadows instead of hard borders; system `prefers-color-scheme` dark override replaced by explicit mode toggle (see PHASE_UI.md).
+- PWA icons refreshed (dark field + orange calendar, no Farsi glyph); manifest name/short_name set to Latin Nobat; service worker cache bumped to nobat-static-v4 (precache aligned with themes asset versions).
 - Booking validation enforces working hours; blocked days warn but do not refuse; overlap treats only cancelled as free.
 - User edit UI no longer offers permanent delete; appointments are retained when a colleague is deactivated.
 

@@ -1,8 +1,10 @@
 // Service worker: makes the panel installable and caches only static files
 // (fonts, icons, CSS). Pages with appointments are never stored on the phone.
-const CACHE = "nobat-static-v3";
-const ASSETS = ["/static/style.css?v=3", "/static/app.js?v=2", "/static/fonts/Vazirmatn.woff2",
-                "/static/icons/icon-192.png", "/static/icons/icon-512.png"];
+const CACHE = "nobat-static-v4";
+const ASSETS = ["/static/themes.css?v=1", "/static/style.css?v=6", "/static/theme.js?v=1",
+                "/static/app.js?v=3", "/static/fonts/Vazirmatn.woff2",
+                "/static/icons/icon-192.png", "/static/icons/icon-512.png",
+                "/static/icons/icon-maskable-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
