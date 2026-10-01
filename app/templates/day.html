@@ -2,9 +2,9 @@
 {% block content %}
 {% set dq = ("?doctor=" ~ doctor_id) if doctor_id else "" %}
 <div class="bar">
-  <a class="btn no-print" href="/day/{{ prev }}{{ dq }}" aria-label="روز قبل">›</a>
+  <a class="btn no-print" href="/day/{{ prev }}{{ dq }}" aria-label="روز قبل" dir="ltr">›</a>
   <h1 class="month">{{ d|long_date }}</h1>
-  <a class="btn no-print" href="/day/{{ next }}{{ dq }}" aria-label="روز بعد">‹</a>
+  <a class="btn no-print" href="/day/{{ next }}{{ dq }}" aria-label="روز بعد" dir="ltr">‹</a>
 </div>
 <div class="actions no-print">
   <a class="btn primary" href="/appointments/new?day={{ j }}{{ ('&doctor=' ~ doctor_id) if doctor_id else '' }}">+ نوبت جدید در این روز</a>
