@@ -194,18 +194,32 @@ crontab -e
 
 <div dir="rtl">
 
-این خط را اضافه کنید (اگر پوشه‌ی دیگری استفاده کرده‌اید، `/srv/nobat` را عوض کنید):
+این خط‌ها را اضافه کنید (اگر پوشه‌ی دیگری استفاده کرده‌اید، `/srv/nobat` را عوض کنید):
 
 </div>
 
 ```
-0 3 * * * cd /srv/nobat && docker compose exec -T nobat python -m app.manage backup /data/backups/nobat-$(date +\%F).db >> /srv/nobat/backup.log 2>&1
+0 3 * * * cd /srv/nobat && docker compose exec -T nobat python -m app.manage backup >> /srv/nobat/backup.log 2>&1
+30 3 * * * cd /srv/nobat && docker compose exec -T nobat python -m app.manage backup-prune --days 14 >> /srv/nobat/backup.log 2>&1
 ```
 
 <div dir="rtl">
 
-پشتیبان‌ها در `data/backups/` ذخیره می‌شوند و `backup.log` هر اجرا را ثبت می‌کند. با `ls -la data/backups/` و `cat backup.log` بررسی کنید.
-بهتر است هر از گاهی پشتیبان‌ها را روی دستگاه دیگری هم کپی کنید.
+دستور `backup` بدون مسیر، فایل را در `data/backups/nobat-YYYY-MM-DD.db` می‌نویسد.
+`backup-prune` پشتیبان‌های قدیمی‌تر از ۱۴ روز را پاک می‌کند.
+با `ls -la data/backups/` و `cat backup.log` بررسی کنید. بهتر است هر از گاهی پشتیبان‌ها را روی دستگاه دیگری هم کپی کنید.
+
+بعد از به‌روزرسانی Nobat یک‌بار مهاجرت پایگاه‌داده را اجرا کنید:
+
+</div>
+
+```bash
+docker compose exec nobat python -m app.manage migrate
+```
+
+<div dir="rtl">
+
+(نصب تازه هم هنگام راه‌اندازی به‌صورت خودکار مهاجرت را اعمال می‌کند.)
 
 ---
 
@@ -214,9 +228,15 @@ crontab -e
 | کار | دستور |
 |---|---|
 | دیدن لاگ‌ها | `docker compose logs -f nobat` |
+| اعمال مهاجرت پایگاه‌داده | `docker compose exec nobat python -m app.manage migrate` |
 | بازنشانی رمز فراموش‌شده | `docker compose exec nobat python -m app.manage reset-password USERNAME` |
-| پشتیبان‌گیری فوری | `docker compose exec nobat python -m app.manage backup /data/backups/manual.db` |
-| به‌روزرسانی به نسخه‌ی جدید | `git pull && docker compose up -d --build` |
+| پشتیبان‌گیری فوری | `docker compose exec nobat python -m app.manage backup` |
+| پاکسازی پشتیبان‌های قدیمی | `docker compose exec nobat python -m app.manage backup-prune --days 14` |
+| بازیابی پشتیبان در فایل دیگر | `docker compose exec nobat python -m app.manage restore /data/backups/FILE.db --to /data/restored.db` |
+| بازیابی روی پایگاه زنده | `docker compose exec nobat python -m app.manage restore /data/backups/FILE.db --force` |
+| غیرفعال کردن کاربر | `docker compose exec nobat python -m app.manage deactivate-user USERNAME` |
+| حذف همیشگی کاربر | `docker compose exec nobat python -m app.manage delete-user USERNAME --confirm YES` |
+| به‌روزرسانی به نسخه‌ی جدید | `git pull && docker compose up -d --build && docker compose exec nobat python -m app.manage migrate` |
 
 ## انتقال به سرور دیگر
 

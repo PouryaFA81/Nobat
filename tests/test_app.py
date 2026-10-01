@@ -143,24 +143,43 @@ class PanelTests(unittest.TestCase):
         r = a.post("/users/new", data={"name": "x", "username": "x", "password": "12345678"})
         self.assertEqual(r.status_code, 400)
 
-    def test_delete_user_removes_their_appointments(self):
+    def test_deactivate_user_keeps_appointments_and_blocks_login(self):
         a = self.client("admin", "adminpass1")
         with db.db() as c:
             uid = db.create_user(c, "temp", "موقت", "temppass1")
         self.book(a, uid, "موقت-۱", days=15)
         r = a.get(f"/users/{uid}/edit")
+        # Soft-delete via the legacy /delete endpoint (now deactivates).
         r = a.post(f"/users/{uid}/delete", data={"csrf": csrf(r)})
         self.assertEqual(r.status_code, 303)
         with db.db() as c:
-            self.assertIsNone(c.execute("SELECT 1 FROM users WHERE id = ?", (uid,)).fetchone())
-            self.assertIsNone(c.execute("SELECT 1 FROM appointments WHERE doctor_id = ?", (uid,)).fetchone())
+            row = c.execute("SELECT active FROM users WHERE id = ?", (uid,)).fetchone()
+            self.assertEqual(row["active"], 0)
+            self.assertIsNotNone(c.execute(
+                "SELECT 1 FROM appointments WHERE doctor_id = ?", (uid,)).fetchone())
+        # Deactivated user cannot log in
+        c = TestClient(main.app, follow_redirects=False)
+        r = c.get("/login")
+        r = c.post("/login", data={"csrf": csrf(r), "username": "temp", "password": "temppass1"})
+        self.assertEqual(r.status_code, 401)
 
-    def test_admin_cannot_delete_self(self):
+    def test_deactivate_via_edit_checkbox(self):
+        a = self.client("admin", "adminpass1")
+        with db.db() as c:
+            uid = db.create_user(c, "temp2", "موقت۲", "temppass2")
+        r = a.get(f"/users/{uid}/edit")
+        a.post(f"/users/{uid}/edit", data={
+            "csrf": csrf(r), "name": "موقت۲", "is_doctor": "1", "active": "0"})
+        with db.db() as c:
+            self.assertEqual(c.execute("SELECT active FROM users WHERE id = ?", (uid,)).fetchone()[0], 0)
+
+    def test_admin_cannot_deactivate_self_via_delete(self):
         a = self.client("admin", "adminpass1")
         r = a.get(f"/users/{self.admin_id}/edit")
         a.post(f"/users/{self.admin_id}/delete", data={"csrf": csrf(r)})
         with db.db() as c:
-            self.assertIsNotNone(c.execute("SELECT 1 FROM users WHERE id = ?", (self.admin_id,)).fetchone())
+            row = c.execute("SELECT active FROM users WHERE id = ?", (self.admin_id,)).fetchone()
+            self.assertEqual(row["active"], 1)
 
     def test_password_reset_logs_out_other_sessions(self):
         d = self.client("other", "otherpass1")
