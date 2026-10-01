@@ -1,9 +1,11 @@
 # Changelog
 
+All notable changes to this project are documented here.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
+
 ## [Unreleased]
 
-### Changed
-- Header chrome Option A′: primary actions are only **تقویم** and **+**; sun/moon mode switch beside **حساب**; palette and admin tools (همکاران، ساعات کاری، CSV، گزارش فعالیت) under Account menu groups; staff **برنامه من** / **جستجو** under Account. Page print/ICS use a bare **⋮** menu (چاپ / دانلود ICS). Account and page ⋮ panels use soft drop shadow + hairline (no dual-tone neu out-glow). Service worker cache bumped to nobat-static-v6.
+## [1.1.0] - 2026-10-01
 
 ### Added
 - Neumorphism theme tokens (`themes.css`): yaru-orange (default) and teal palettes; light/dark via `data-theme` / `data-mode`; chrome toggles (روشن/تیره + پالت) with localStorage.
@@ -23,15 +25,16 @@
 - Database migration runner (`schema_migrations`, `python -m app.manage migrate`) with baseline `0001`.
 - `backup` default path under `data/backups/`, plus `backup-prune` (default 14 days) and safe `restore` (`--force` / `--to`).
 - Soft-delete (deactivate) as the default user removal path; hard delete only via `delete-user --confirm YES`.
+- README light and dark screenshot rows; plain-language user guides (EN + FA).
 
 ### Changed
+- Header chrome Option A′: primary actions are only **تقویم** and **+**; sun/moon mode switch beside **حساب**; palette and admin tools (همکاران، ساعات کاری، CSV، گزارش فعالیت) under Account menu groups; staff **برنامه من** / **جستجو** under Account. Page print/ICS use a bare **⋮** menu (چاپ / دانلود ICS). Account and page ⋮ panels use soft drop shadow + hairline (no dual-tone neu out-glow). Service worker cache bumped to nobat-static-v6.
 - UI surfaces use soft neumorphic shadows instead of hard borders; system `prefers-color-scheme` dark override replaced by explicit mode toggle (see PHASE_UI.md).
-- PWA icons refreshed (dark field + orange calendar, no Farsi glyph); manifest name/short_name set to Latin Nobat; service worker cache bumped to nobat-static-v4 (precache aligned with themes asset versions).
+- PWA icons refreshed (dark field + orange calendar, no Farsi glyph); rounded any-icons; manifest name/short_name set to Latin Nobat.
+- Day and month prev/next chevrons pinned with `dir="ltr"` so RTL bidi does not mirror ›/‹.
+- Day view no longer shows a duplicate «بازگشت به تقویم» link (header already has تقویم).
 - Booking validation enforces working hours; blocked days warn but do not refuse; overlap treats only cancelled as free.
 - User edit UI no longer offers permanent delete; appointments are retained when a colleague is deactivated.
-
-All notable changes to this project are documented here.
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0] - 2026-09-30
 
@@ -50,4 +53,5 @@ First public release.
 - Security: scrypt password hashing, CSRF protection, strict Content-Security-Policy, login rate limiting,
   and logout of other sessions after a password change.
 
+[1.1.0]: https://github.com/PouryaFA81/Nobat/releases/tag/v1.1.0
 [1.0.0]: https://github.com/PouryaFA81/Nobat/releases/tag/v1.0.0
