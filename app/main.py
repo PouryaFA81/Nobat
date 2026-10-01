@@ -26,7 +26,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from . import __version__, audit, db, export_csv, ics, jalali, notify, schedule
+from . import __version__, audit, db, export_csv, ics, jalali, notify, recurrence, schedule
 from .jalali import fa
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -150,6 +150,21 @@ def appt_with_topic(c, appt_id):
         "SELECT a.*, u.ntfy_topic, u.name AS doctor_name FROM appointments a "
         "JOIN users u ON u.id = a.doctor_id WHERE a.id = ?", (appt_id,)).fetchone()
     return dict(row) if row else None
+
+
+
+def slot_conflict(c, doctor_id, day_iso, start, duration, exclude_id=None):
+    """Return overlapping appointment row or None. Cancelled does not block."""
+    s, e = to_min(start), to_min(start) + duration
+    others = c.execute(
+        "SELECT id, initials, start_time, duration_min, status FROM appointments "
+        "WHERE doctor_id = ? AND day = ? AND status != 'cancelled' AND id != ?",
+        (doctor_id, day_iso, exclude_id or 0)).fetchall()
+    for o in others:
+        os_, oe = to_min(o["start_time"]), to_min(o["start_time"]) + o["duration_min"]
+        if s < oe and os_ < e:
+            return o
+    return None
 
 
 def to_min(hhmm: str) -> int:
@@ -392,17 +407,11 @@ def _parse_appt_form(form, c, exclude_id=None):
     if hours_err:
         return v, hours_err
 
-    s, e = to_min(start), to_min(start) + duration
     # Cancelled frees the slot; every other status (incl. unknown) still occupies it.
-    others = c.execute(
-        "SELECT id, initials, start_time, duration_min, status FROM appointments "
-        "WHERE doctor_id = ? AND day = ? AND status != 'cancelled' AND id != ?",
-        (doctor_id, day_iso, exclude_id or 0)).fetchall()
-    for o in others:
-        os_, oe = to_min(o["start_time"]), to_min(o["start_time"]) + o["duration_min"]
-        if s < oe and os_ < e:
-            return v, (f"تداخل: {doc['name']} در این زمان نوبت دیگری دارد "
-                       f"({o['initials']}، ساعت {fa(o['start_time'])}).")
+    o = slot_conflict(c, doctor_id, day_iso, start, duration, exclude_id)
+    if o:
+        return v, (f"تداخل: {doc['name']} در این زمان نوبت دیگری دارد "
+                   f"({o['initials']}، ساعت {fa(o['start_time'])}).")
     v.update(doctor_id=doctor_id, day=day_iso, start_time=start, duration=duration, _day=day)
     return v, None
 
@@ -424,30 +433,64 @@ async def appt_new(request: Request, user):
                 d = today()
             jy, jm, jd = jalali.to_jalali(d)
             v = dict(doctor_id=request.query_params.get("doctor", ""), initials="", jy=jy, jm=jm, jd=jd,
-                     hour=16, minute=0, duration=60, description="")
+                     hour=16, minute=0, duration=60, description="", repeat_weeks=1)
             return render(request, "appt_form.html", user, **_form_ctx(c, v, "نوبت جدید", "/appointments/new"))
         form = await form_checked(request)
         v, err = _parse_appt_form(form, c)
+        v["repeat_weeks"] = recurrence.parse_repeat_weeks(form.get("repeat_weeks", "1"))
         if err:
             return render(request, "appt_form.html", user, error=err, status_code=400,
                           **_form_ctx(c, v, "نوبت جدید", "/appointments/new"))
-        cur = c.execute(
-            "INSERT INTO appointments (doctor_id, initials, day, start_time, duration_min, description, "
-            "reminder_sent, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (v["doctor_id"], v["initials"], v["day"], v["start_time"], v["duration"], v["description"],
-             reminder_flag(v["_day"]), user["id"]))
-        appt_id = cur.lastrowid
-        audit.record(user, audit.BOOK, appointment_id=appt_id, conn=c,
-                     detail={"day": v["day"], "start": v["start_time"], "doctor_id": v["doctor_id"],
-                             "initials": v["initials"]})
+        days = recurrence.weekly_dates(v["_day"], v["repeat_weeks"])
+        # Pre-check every weekly slot (fail whole series on first conflict / hours error).
+        doc_name = c.execute("SELECT name FROM users WHERE id = ?", (v["doctor_id"],)).fetchone()["name"]
+        blocked_notes = []
+        for d in days:
+            day_iso = d.isoformat()
+            open_t, close_t = schedule.get_hours(c, v["doctor_id"])
+            hours_err = schedule.validate_within_hours(v["start_time"], v["duration"], open_t, close_t)
+            if hours_err:
+                return render(request, "appt_form.html", user, error=f"{jalali.jstr(d)}: {hours_err}",
+                              status_code=400, **_form_ctx(c, v, "نوبت جدید", "/appointments/new"))
+            o = slot_conflict(c, v["doctor_id"], day_iso, v["start_time"], v["duration"])
+            if o:
+                err = (f"تداخل در سری ({jalali.jstr(d)}): {doc_name} نوبت دیگری دارد "
+                       f"({o['initials']}، ساعت {fa(o['start_time'])}). سری ثبت نشد.")
+                return render(request, "appt_form.html", user, error=err, status_code=400,
+                              **_form_ctx(c, v, "نوبت جدید", "/appointments/new"))
+            blocked, reason = schedule.is_blocked(c, day_iso, v["doctor_id"])
+            if blocked:
+                extra = f" ({reason})" if reason else ""
+                blocked_notes.append(f"{jalali.jstr(d)}{extra}")
+        series_id = recurrence.new_series_id() if len(days) > 1 else None
+        first_id = None
+        first_appt = None
+        for d in days:
+            cur = c.execute(
+                "INSERT INTO appointments (doctor_id, initials, day, start_time, duration_min, description, "
+                "reminder_sent, created_by, series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (v["doctor_id"], v["initials"], d.isoformat(), v["start_time"], v["duration"],
+                 v["description"], reminder_flag(d), user["id"], series_id))
+            appt_id = cur.lastrowid
+            if first_id is None:
+                first_id = appt_id
+            audit.record(user, audit.BOOK, appointment_id=appt_id, conn=c,
+                         detail={"day": d.isoformat(), "start": v["start_time"],
+                                 "doctor_id": v["doctor_id"], "initials": v["initials"],
+                                 "series_id": series_id})
         c.commit()
-        appt = appt_with_topic(c, appt_id)
-    flash = f"نوبت ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
-    if v.get("_blocked_warning"):
+        first_appt = appt_with_topic(c, first_id)
+    if series_id:
+        flash = f"{fa(len(days))} نوبت هفتگی ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
+    else:
+        flash = f"نوبت ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
+    if blocked_notes:
+        flash = f"{flash} توجه: روز بسته/تعطیل: {', '.join(blocked_notes)}."
+    elif v.get("_blocked_warning"):
         flash = f"{flash} {v['_blocked_warning']}"
     request.session["flash"] = flash
     return RedirectResponse(f"/day/{jalali.jstr(v['_day'])}", status_code=303,
-                            background=BackgroundTask(notify.appointment_event, "new", appt))
+                            background=BackgroundTask(notify.appointment_event, "new", first_appt))
 
 
 @login_required(booker=True)
@@ -509,16 +552,37 @@ async def appt_edit(request: Request, user):
 
 @login_required(booker=True)
 async def appt_cancel(request: Request, user):
-    await form_checked(request)
+    form = await form_checked(request)
+    scope = str(form.get("cancel_scope", "one")).strip()
     with db.db() as c:
         appt = appt_with_topic(c, request.path_params["id"])
         if not appt or appt["status"] == "cancelled":
             return redirect("/calendar")
-        c.execute("UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?",
-                  (appt["id"],))
-        audit.record(user, audit.CANCEL, appointment_id=appt["id"], conn=c,
-                     detail={"day": appt["day"], "start": appt["start_time"], "doctor_id": appt["doctor_id"]})
-    request.session["flash"] = f"نوبت لغو شد و به {STAFF_LABEL} اطلاع داده شد."
+        cancelled_ids = [appt["id"]]
+        if scope == "series" and appt.get("series_id"):
+            rows = c.execute(
+                "SELECT id FROM appointments WHERE series_id = ? AND status != 'cancelled'",
+                (appt["series_id"],),
+            ).fetchall()
+            cancelled_ids = [r["id"] for r in rows]
+            c.execute(
+                "UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') "
+                "WHERE series_id = ? AND status != 'cancelled'",
+                (appt["series_id"],),
+            )
+            audit.record(user, audit.CANCEL, appointment_id=appt["id"], conn=c,
+                         detail={"day": appt["day"], "start": appt["start_time"],
+                                 "doctor_id": appt["doctor_id"], "scope": "series",
+                                 "series_id": appt["series_id"], "count": len(cancelled_ids)})
+            flash = f"{fa(len(cancelled_ids))} نوبت این سری لغو شد و به {STAFF_LABEL} اطلاع داده شد."
+        else:
+            c.execute("UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?",
+                      (appt["id"],))
+            audit.record(user, audit.CANCEL, appointment_id=appt["id"], conn=c,
+                         detail={"day": appt["day"], "start": appt["start_time"],
+                                 "doctor_id": appt["doctor_id"], "scope": "one"})
+            flash = f"نوبت لغو شد و به {STAFF_LABEL} اطلاع داده شد."
+    request.session["flash"] = flash
     return RedirectResponse(f"/day/{jalali.jstr(date.fromisoformat(appt['day']))}", status_code=303,
                             background=BackgroundTask(notify.appointment_event, "cancelled", appt))
 

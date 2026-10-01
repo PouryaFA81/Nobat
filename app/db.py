@@ -13,8 +13,8 @@ DB_PATH = os.environ.get("DB_PATH", "/data/nobat.db")
 
 # Bump when adding a numbered script under app/migrations/.
 # Migration 0001 baseline; 0002 working hours; 0003 status docs; 0004 audit log;
-# 0005 receptionist; (later Phase 4 scripts bump further).
-SCHEMA_VERSION = 5
+# 0005 receptionist; 0006 recurring series; (later Phase 4 scripts bump further).
+SCHEMA_VERSION = 6
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     status        TEXT NOT NULL DEFAULT 'active',   -- active|arrived|no_show|completed|cancelled
     reminder_sent INTEGER NOT NULL DEFAULT 0,
     created_by    INTEGER REFERENCES users(id),
+    series_id     TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_appt_day ON appointments(day);
 CREATE INDEX IF NOT EXISTS idx_appt_doctor ON appointments(doctor_id, day);
+CREATE INDEX IF NOT EXISTS idx_appt_series ON appointments(series_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, created_at);
@@ -104,13 +106,19 @@ def _table_columns(c: sqlite3.Connection, table: str) -> set[str]:
 
 def _ensure_columns(c: sqlite3.Connection) -> None:
     """Idempotent ADD COLUMN / CREATE for Phase 4+ fields (safe on fresh + upgrade)."""
-    if "users" in {r[0] for r in c.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}:
+    tables = {r[0] for r in c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if "users" in tables:
         cols = _table_columns(c, "users")
         if "is_receptionist" not in cols:
             c.execute(
                 "ALTER TABLE users ADD COLUMN is_receptionist INTEGER NOT NULL DEFAULT 0"
             )
+    if "appointments" in tables:
+        acols = _table_columns(c, "appointments")
+        if "series_id" not in acols:
+            c.execute("ALTER TABLE appointments ADD COLUMN series_id TEXT")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_appt_series ON appointments(series_id)")
 
 
 def _migration_files() -> list[tuple[int, str, Path]]:
