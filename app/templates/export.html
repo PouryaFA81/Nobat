@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}خروجی CSV · نوبت{% endblock %}
+{% block content %}
+<div class="bar"><h1 class="month">خروجی CSV</h1></div>
+<p class="hint">فقط مدیران. بازه را با تاریخ شمسی انتخاب کنید. یادداشت خصوصی به‌طور پیش‌فرض در فایل نیست (مثل اعلان‌ها). برای اکسل با فارسی، فایل با UTF-8 BOM ذخیره می‌شود.</p>
+
+<section class="card">
+  <form method="get" action="/export.csv" class="form">
+    <fieldset>
+      <legend>از تاریخ (شمسی)</legend>
+      <div class="row3">
+        <label>روز
+          <select name="from_jd">{% for d in range(1, 32) %}<option value="{{ d }}" {% if from_jd|string == d|string %}selected{% endif %}>{{ d|fa }}</option>{% endfor %}</select>
+        </label>
+        <label>ماه
+          <select name="from_jm">{% for i in range(12) %}<option value="{{ i + 1 }}" {% if from_jm|string == (i + 1)|string %}selected{% endif %}>{{ MONTHS[i] }}</option>{% endfor %}</select>
+        </label>
+        <label>سال
+          <select name="from_jy">{% for y in years %}<option value="{{ y }}" {% if from_jy|string == y|string %}selected{% endif %}>{{ y|fa }}</option>{% endfor %}</select>
+        </label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>تا تاریخ (شمسی)</legend>
+      <div class="row3">
+        <label>روز
+          <select name="to_jd">{% for d in range(1, 32) %}<option value="{{ d }}" {% if to_jd|string == d|string %}selected{% endif %}>{{ d|fa }}</option>{% endfor %}</select>
+        </label>
+        <label>ماه
+          <select name="to_jm">{% for i in range(12) %}<option value="{{ i + 1 }}" {% if to_jm|string == (i + 1)|string %}selected{% endif %}>{{ MONTHS[i] }}</option>{% endfor %}</select>
+        </label>
+        <label>سال
+          <select name="to_jy">{% for y in years %}<option value="{{ y }}" {% if to_jy|string == y|string %}selected{% endif %}>{{ y|fa }}</option>{% endfor %}</select>
+        </label>
+      </div>
+    </fieldset>
+    <label>{{ STAFF }} (اختیاری)
+      <select name="doctor">
+        <option value="">— همه —</option>
+        {% for d in docs %}
+        <option value="{{ d.id }}" {% if doctor_id == (d.id|string) %}selected{% endif %}>{{ d.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="check">
+      <input type="checkbox" name="notes" value="1" {% if include_notes %}checked{% endif %}>
+      یادداشت خصوصی را هم در CSV بگذار (اختیاری؛ فقط برای مدیر)
+    </label>
+    <div class="form-actions">
+      <button class="btn primary">دانلود CSV</button>
+      <a class="btn ghost" href="/calendar">بازگشت</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

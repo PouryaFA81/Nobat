@@ -2,16 +2,17 @@
 {% block content %}
 {% set dq = ("?doctor=" ~ doctor_id) if doctor_id else "" %}
 <div class="bar">
-  <a class="btn" href="/day/{{ prev }}{{ dq }}" aria-label="روز قبل">›</a>
+  <a class="btn no-print" href="/day/{{ prev }}{{ dq }}" aria-label="روز قبل">›</a>
   <h1 class="month">{{ d|long_date }}</h1>
-  <a class="btn" href="/day/{{ next }}{{ dq }}" aria-label="روز بعد">‹</a>
+  <a class="btn no-print" href="/day/{{ next }}{{ dq }}" aria-label="روز بعد">‹</a>
 </div>
-<div class="actions">
+<div class="actions no-print">
   <a class="btn primary" href="/appointments/new?day={{ j }}{{ ('&doctor=' ~ doctor_id) if doctor_id else '' }}">+ نوبت جدید در این روز</a>
+  <button type="button" class="btn ghost" data-print>چاپ برگه روز</button>
   <a class="btn ghost" href="/calendar?m={{ j[:7] }}{{ ('&doctor=' ~ doctor_id) if doctor_id else '' }}">بازگشت به تقویم</a>
 </div>
 
-{% if doctor_id %}<p class="hint">فقط نوبت‌های یک {{ STAFF }} نمایش داده می‌شود. <a href="/day/{{ j }}">نمایش همه</a></p>{% endif %}
+{% if doctor_id %}<p class="hint no-print">فقط نوبت‌های یک {{ STAFF }} نمایش داده می‌شود. <a href="/day/{{ j }}">نمایش همه</a></p>{% endif %}
 
 {% if rows %}
 <ul class="appts">
@@ -21,6 +22,7 @@
     <div class="appt-body">
       <div class="appt-title">{{ a.initials }} <span class="who">— {{ a.doctor_name }}</span>
         {% if a.status != 'active' %}<span class="tag {% if a.status == 'arrived' or a.status == 'completed' %}green{% endif %}">{{ a.status|status_label }}</span>{% endif %}</div>
+      {% if a.created_by_name %}<div class="sub who">ثبت‌کننده: {{ a.created_by_name }}</div>{% endif %}
       {% if a.description %}<div class="desc">{{ a.description }}</div>{% endif %}
     </div>
     <div class="appt-actions">
