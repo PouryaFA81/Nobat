@@ -12,8 +12,8 @@ from pathlib import Path
 DB_PATH = os.environ.get("DB_PATH", "/data/nobat.db")
 
 # Bump when adding a numbered script under app/migrations/.
-# Migration 0001 is the baseline; 0002 working hours.
-SCHEMA_VERSION = 2
+# Migration 0001 is the baseline; 0002 working hours; 0003 status docs.
+SCHEMA_VERSION = 3
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 

@@ -16,13 +16,31 @@
     </h2>
     <ul class="appts">
       {% for a in items %}
-      <li class="appt {% if a.status == 'cancelled' %}cancelled{% endif %}">
+      <li class="appt {% if a.status != 'active' %}{{ a.status }}{% endif %}">
         <div class="appt-time">{{ a.start_time|fa }}<small>{{ a.duration_min|fa }} دقیقه</small></div>
         <div class="appt-body">
           <div class="appt-title">{{ a.initials }}
-            {% if a.status == 'cancelled' %}<span class="tag">لغو شده</span>{% endif %}</div>
+            {% if a.status != 'active' %}<span class="tag {% if a.status == 'arrived' or a.status == 'completed' %}green{% endif %}">{{ a.status|status_label }}</span>{% endif %}</div>
           {% if a.description %}<div class="desc">{{ a.description }}</div>{% endif %}
         </div>
+        {% if a.status != 'cancelled' %}
+        <div class="appt-actions">
+          {% for st in ('arrived', 'no_show', 'completed') if st != a.status %}
+          <form method="post" action="/appointments/{{ a.id }}/status{{ '?past=1' if past else '' }}">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="status" value="{{ st }}">
+            <button class="btn small ghost">{{ STATUS_LABELS[st] }}</button>
+          </form>
+          {% endfor %}
+          {% if a.status != 'active' %}
+          <form method="post" action="/appointments/{{ a.id }}/status{{ '?past=1' if past else '' }}">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="status" value="active">
+            <button class="btn small ghost">{{ STATUS_LABELS['active'] }}</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
