@@ -26,7 +26,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from . import __version__, audit, db, export_csv, ics, jalali, notify, recurrence, schedule
+from . import __version__, audit, db, export_csv, ics, jalali, notify, recurrence, schedule, waitlist
 from .jalali import fa
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -363,9 +363,12 @@ async def day_view(request: Request, user):
     with db.db() as c:
         rows = c.execute(q + " ORDER BY a.status, a.start_time", args).fetchall()
         docs = doctors(c)
+        wl_doctor = int(doctor_id) if doctor_id.isdigit() else None
+        wait_rows = waitlist.list_for_day(c, d.isoformat(), wl_doctor)
     return render(request, "day.html", user, d=d.isoformat(), j=jalali.jstr(d), rows=rows,
                   prev=jalali.jstr(d - timedelta(days=1)), next=jalali.jstr(d + timedelta(days=1)),
-                  docs=docs, doctor_id=doctor_id)
+                  docs=docs, doctor_id=doctor_id, wait_rows=wait_rows,
+                  hours=HOURS, minutes=MINUTES, durations=DURATIONS)
 
 
 # ---------------------------------------------------------------- coordinator: appointment form
@@ -554,11 +557,12 @@ async def appt_edit(request: Request, user):
 async def appt_cancel(request: Request, user):
     form = await form_checked(request)
     scope = str(form.get("cancel_scope", "one")).strip()
+    promote_info = None
+    promoted_appt = None
     with db.db() as c:
         appt = appt_with_topic(c, request.path_params["id"])
         if not appt or appt["status"] == "cancelled":
             return redirect("/calendar")
-        cancelled_ids = [appt["id"]]
         if scope == "series" and appt.get("series_id"):
             rows = c.execute(
                 "SELECT id FROM appointments WHERE series_id = ? AND status != 'cancelled'",
@@ -582,9 +586,110 @@ async def appt_cancel(request: Request, user):
                          detail={"day": appt["day"], "start": appt["start_time"],
                                  "doctor_id": appt["doctor_id"], "scope": "one"})
             flash = f"نوبت لغو شد و به {STAFF_LABEL} اطلاع داده شد."
+            # Auto-promote next waitlist entry for this staff + day into the freed slot.
+            promote_info = _try_promote_waitlist(
+                c, user, doctor_id=appt["doctor_id"], day_iso=appt["day"],
+                freed_start=appt["start_time"], freed_duration=appt["duration_min"])
+        if promote_info:
+            flash = (
+                f"{flash} از فهرست انتظار ارتقا یافت: {promote_info['initials']} "
+                f"ساعت {fa(promote_info['start'])}."
+            )
+            promoted_appt = appt_with_topic(c, promote_info["appt_id"])
     request.session["flash"] = flash
+
+    async def after_cancel():
+        await notify.appointment_event("cancelled", appt)
+        if promoted_appt:
+            await notify.appointment_event("new", promoted_appt)
+
     return RedirectResponse(f"/day/{jalali.jstr(date.fromisoformat(appt['day']))}", status_code=303,
-                            background=BackgroundTask(notify.appointment_event, "cancelled", appt))
+                            background=BackgroundTask(after_cancel))
+
+
+def _try_promote_waitlist(c, user, *, doctor_id, day_iso, freed_start, freed_duration):
+    """Promote oldest waiting entry if a free slot fits. Returns dict or None.
+
+    Auto-promote is intentional (Phase 4): cancelling an active appointment
+    books the next waitlist row for the same staff+day when hours/overlap allow.
+    """
+    entry = waitlist.next_waiting(c, doctor_id, day_iso)
+    if not entry:
+        return None
+    start = waitlist.choose_promote_time(entry, freed_start)
+    duration = int(entry["duration_min"] or freed_duration or 60)
+    open_t, close_t = schedule.get_hours(c, doctor_id)
+
+    def usable(st, dur):
+        if schedule.validate_within_hours(st, dur, open_t, close_t):
+            return False
+        if slot_conflict(c, doctor_id, day_iso, st, dur):
+            return False
+        return True
+
+    if not usable(start, duration):
+        start = freed_start
+        duration = int(freed_duration or 60)
+        if not usable(start, duration):
+            return None
+    day = date.fromisoformat(day_iso)
+    cur = c.execute(
+        "INSERT INTO appointments (doctor_id, initials, day, start_time, duration_min, description, "
+        "reminder_sent, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (doctor_id, entry["initials"], day_iso, start, duration, entry["note"] or "",
+         reminder_flag(day), user["id"]))
+    appt_id = cur.lastrowid
+    waitlist.mark_promoted(c, entry["id"], appt_id)
+    audit.record(user, audit.BOOK, appointment_id=appt_id, conn=c,
+                 detail={"day": day_iso, "start": start, "doctor_id": doctor_id,
+                         "initials": entry["initials"], "from_waitlist": entry["id"]})
+    return {"appt_id": appt_id, "initials": entry["initials"], "start": start}
+
+
+
+# ---------------------------------------------------------------- waitlist
+@login_required(booker=True)
+async def waitlist_add(request: Request, user):
+    form = await form_checked(request)
+    try:
+        doctor_id = int(form.get("doctor_id", "0"))
+        jy, jm, jd = (int(jalali.en_digits(str(form.get(k, "")))) for k in ("jy", "jm", "jd"))
+        duration = int(form.get("duration") or "60")
+        hour = int(form.get("hour") or "-1")
+        minute = int(form.get("minute") or "0")
+    except ValueError:
+        return redirect("/calendar", "اطلاعات فهرست انتظار ناقص است.", request)
+    initials = str(form.get("initials", "")).strip()[:30]
+    note = str(form.get("note", "")).strip()[:1000]
+    preferred = ""
+    if 0 <= hour < 24 and 0 <= minute < 60:
+        preferred = f"{hour:02d}:{minute:02d}"
+    if not initials or not jalali.valid(jy, jm, jd):
+        return redirect("/calendar", "حروف اول و تاریخ را کامل کنید.", request)
+    day = jalali.to_gregorian(jy, jm, jd)
+    with db.db() as c:
+        doc = c.execute(
+            "SELECT id FROM users WHERE id = ? AND is_doctor = 1 AND active = 1", (doctor_id,)
+        ).fetchone()
+        if not doc:
+            return redirect(f"/day/{jalali.jstr(day)}", f"{STAFF_LABEL} نامعتبر است.", request)
+        waitlist.add_entry(
+            c, doctor_id=doctor_id, day_iso=day.isoformat(), initials=initials,
+            preferred_time=preferred, duration_min=duration, note=note, created_by=user["id"])
+    return redirect(f"/day/{jalali.jstr(day)}", "به فهرست انتظار اضافه شد.", request)
+
+
+@login_required(booker=True)
+async def waitlist_cancel(request: Request, user):
+    await form_checked(request)
+    wid = int(request.path_params["id"])
+    with db.db() as c:
+        row = c.execute("SELECT * FROM waitlist WHERE id = ?", (wid,)).fetchone()
+        if not row:
+            return redirect("/calendar")
+        waitlist.cancel_entry(c, wid)
+        day = row["day"]
+    return redirect(f"/day/{jalali.jstr(date.fromisoformat(day))}", "از فهرست انتظار حذف شد.", request)
 
 
 # ---------------------------------------------------------------- status updates
@@ -1064,6 +1169,8 @@ routes = [
     Route("/appointments/{id:int}/edit", appt_edit, methods=["GET", "POST"]),
     Route("/appointments/{id:int}/cancel", appt_cancel, methods=["POST"]),
     Route("/appointments/{id:int}/status", appt_set_status, methods=["POST"]),
+    Route("/waitlist/add", waitlist_add, methods=["POST"]),
+    Route("/waitlist/{id:int}/cancel", waitlist_cancel, methods=["POST"]),
     Route("/schedule", schedule_settings, methods=["GET", "POST"]),
     Route("/audit", audit_log_view),
     Route("/export", export_form),

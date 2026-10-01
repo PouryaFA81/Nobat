@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- ICS download for staff `/me` and coordinator day view (no private notes in DESCRIPTION).
+- Receptionist role (`is_receptionist`, migration `0005`): book/manage appointments without user/admin settings.
+- Recurring weekly series (`series_id`, migration `0006`): create N weeks; cancel one or whole series; overlap refuses series.
+- Waitlist queue (migration `0007`) on day view; auto-promote next waiter on cancel of an active appointment.
 - Print-friendly day sheet and staff schedule (print CSS; چاپ buttons on `/day` and `/me`).
 - Admin CSV export (`/export`, `/export.csv`): Jalali date range, UTF-8 BOM, notes excluded by default.
 - Initials search (`/search`): admin all appointments; staff own schedule only.

@@ -52,7 +52,10 @@ class Phase2AuditHelpers(unittest.TestCase):
             tables = {r[0] for r in c.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         self.assertIn("audit_log", tables)
-        self.assertEqual(db.SCHEMA_VERSION, 4)
+        self.assertGreaterEqual(db.SCHEMA_VERSION, 4)
+        with db.db() as c:
+            names = {r["name"] for r in c.execute("SELECT name FROM schema_migrations")}
+        self.assertIn("audit_log", names)
 
     def test_record_fail_safe_does_not_raise(self):
         with db.db() as c:

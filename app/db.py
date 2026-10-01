@@ -13,8 +13,8 @@ DB_PATH = os.environ.get("DB_PATH", "/data/nobat.db")
 
 # Bump when adding a numbered script under app/migrations/.
 # Migration 0001 baseline; 0002 working hours; 0003 status docs; 0004 audit log;
-# 0005 receptionist; 0006 recurring series; (later Phase 4 scripts bump further).
-SCHEMA_VERSION = 6
+# 0005 receptionist; 0006 recurring series; 0007 waitlist.
+SCHEMA_VERSION = 7
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -78,6 +78,23 @@ CREATE INDEX IF NOT EXISTS idx_appt_series ON appointments(series_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, created_at);
+
+CREATE TABLE IF NOT EXISTS waitlist (
+    id                       INTEGER PRIMARY KEY,
+    doctor_id                INTEGER NOT NULL REFERENCES users(id),
+    day                      TEXT NOT NULL,
+    preferred_time           TEXT NOT NULL DEFAULT '',
+    duration_min             INTEGER NOT NULL DEFAULT 60,
+    initials                 TEXT NOT NULL,
+    note                     TEXT NOT NULL DEFAULT '',
+    status                   TEXT NOT NULL DEFAULT 'waiting',
+    created_by               INTEGER REFERENCES users(id),
+    created_at               TEXT NOT NULL DEFAULT (datetime('now')),
+    promoted_appointment_id  INTEGER,
+    updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_waitlist_queue
+    ON waitlist(day, doctor_id, status, id);
 """
 
 
@@ -119,6 +136,8 @@ def _ensure_columns(c: sqlite3.Connection) -> None:
         if "series_id" not in acols:
             c.execute("ALTER TABLE appointments ADD COLUMN series_id TEXT")
         c.execute("CREATE INDEX IF NOT EXISTS idx_appt_series ON appointments(series_id)")
+    from . import waitlist as _waitlist  # local import avoids cycle at module load
+    _waitlist.ensure_table(c)
 
 
 def _migration_files() -> list[tuple[int, str, Path]]:

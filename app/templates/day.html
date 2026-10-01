@@ -57,4 +57,67 @@
 {% else %}
 <p class="empty-state">در این روز نوبتی ثبت نشده است.</p>
 {% endif %}
+
+<section class="card waitlist no-print" style="margin-top:1.5rem">
+  <h2>فهرست انتظار این روز</h2>
+  <p class="hint">اگر روز یا همکار پر است، مراجع را اینجا نگه دارید. با لغو یک نوبت فعال، نفر بعدیِ همان {{ STAFF }} و همان روز به‌صورت خودکار ارتقا می‌یابد (اگر ساعت آزاد باشد).</p>
+  {% if wait_rows %}
+  <ul class="list">
+    {% for w in wait_rows %}
+    <li>
+      <strong>{{ w.initials }}</strong>
+      <span class="who">— {{ w.doctor_name }}</span>
+      {% if w.preferred_time %}<span class="sub">ساعت ترجیحی {{ w.preferred_time|fa }}</span>{% endif %}
+      <span class="sub">{{ w.duration_min|fa }} دقیقه</span>
+      {% if w.note %}<div class="desc">{{ w.note }}</div>{% endif %}
+      <form method="post" action="/waitlist/{{ w.id }}/cancel" style="display:inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn small ghost">حذف از انتظار</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">کسی در فهرست انتظار این روز نیست.</p>
+  {% endif %}
+
+  <form method="post" action="/waitlist/add" class="form" style="margin-top:1rem">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="jy" value="{{ j.split('-')[0] }}">
+    <input type="hidden" name="jm" value="{{ j.split('-')[1] }}">
+    <input type="hidden" name="jd" value="{{ j.split('-')[2] }}">
+    <h3>افزودن به انتظار</h3>
+    <label>{{ STAFF }}
+      <select name="doctor_id" required>
+        <option value="">— انتخاب کنید —</option>
+        {% for d in docs %}<option value="{{ d.id }}" {% if doctor_id|string == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>حروف اول
+      <input name="initials" maxlength="30" required placeholder="مثلاً ع.م">
+    </label>
+    <fieldset>
+      <legend>ساعت ترجیحی (اختیاری)</legend>
+      <div class="row3 time" dir="ltr">
+        <select name="hour" aria-label="ساعت">
+          <option value="-1">—</option>
+          {% for h in hours %}<option value="{{ h }}">{{ ('%02d' % h)|fa }}</option>{% endfor %}
+        </select>
+        <span class="colon">:</span>
+        <select name="minute" aria-label="دقیقه">
+          {% for m in minutes %}<option value="{{ m }}">{{ ('%02d' % m)|fa }}</option>{% endfor %}
+        </select>
+      </div>
+    </fieldset>
+    <label>مدت
+      <select name="duration">
+        {% for d in durations %}<option value="{{ d }}" {% if d == 60 %}selected{% endif %}>{{ d|fa }} دقیقه</option>{% endfor %}
+      </select>
+    </label>
+    <label>یادداشت <small>(خصوصی؛ در اعلان و ICS نمی‌آید)</small>
+      <textarea name="note" rows="2" maxlength="1000"></textarea>
+    </label>
+    <button class="btn primary">افزودن به فهرست انتظار</button>
+  </form>
+</section>
 {% endblock %}
