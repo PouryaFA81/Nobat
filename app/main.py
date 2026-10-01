@@ -26,7 +26,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from . import __version__, audit, db, export_csv, jalali, notify, schedule
+from . import __version__, audit, db, export_csv, ics, jalali, notify, schedule
 from .jalali import fa
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -234,6 +234,54 @@ async def my_schedule(request: Request, user):
         groups[-1][1].append(r)
     tomorrow = (t + timedelta(days=1)).isoformat()
     return render(request, "me.html", user, groups=groups, past=past, tomorrow=tomorrow)
+
+
+# ---------------------------------------------------------------- ICS downloads (no private notes)
+@login_required()
+async def my_schedule_ics(request: Request, user):
+    """Staff: download own upcoming appointments as .ics (initials only; no notes)."""
+    if not user["is_doctor"]:
+        return PlainTextResponse("دسترسی ندارید", status_code=403)
+    t = today()
+    with db.db() as c:
+        rows = c.execute(
+            "SELECT * FROM appointments WHERE doctor_id = ? AND day >= ? "
+            "ORDER BY day, start_time", (user["id"], t.isoformat())).fetchall()
+    body = ics.build_ics(rows, calname=f"نوبت — {user['name']}")
+    return Response(
+        body,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{ics.filename_for_me()}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@login_required(admin=True)
+async def day_ics(request: Request, user):
+    """Coordinator: download one day's appointments as .ics (no private notes)."""
+    try:
+        d = jalali.parse_jstr(request.path_params["jdate"])
+    except Exception:
+        return redirect("/calendar")
+    doctor_id = request.query_params.get("doctor", "")
+    q = ("SELECT a.* FROM appointments a WHERE a.day = ?")
+    args: list = [d.isoformat()]
+    if doctor_id.isdigit():
+        q += " AND a.doctor_id = ?"
+        args.append(int(doctor_id))
+    with db.db() as c:
+        rows = c.execute(q + " ORDER BY a.start_time", args).fetchall()
+    body = ics.build_ics(rows, calname=f"نوبت — {jalali.jstr(d)}")
+    return Response(
+        body,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{ics.filename_for_day(d)}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 # ---------------------------------------------------------------- coordinator: calendar
@@ -934,7 +982,9 @@ routes = [
     Route("/login", login, methods=["GET", "POST"]),
     Route("/logout", logout, methods=["POST"]),
     Route("/me", my_schedule),
+    Route("/me.ics", my_schedule_ics),
     Route("/calendar", calendar),
+    Route("/day/{jdate}/ics", day_ics),
     Route("/day/{jdate}", day_view),
     Route("/appointments/new", appt_new, methods=["GET", "POST"]),
     Route("/appointments/{id:int}/edit", appt_edit, methods=["GET", "POST"]),

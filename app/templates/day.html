@@ -9,6 +9,7 @@
 <div class="actions no-print">
   <a class="btn primary" href="/appointments/new?day={{ j }}{{ ('&doctor=' ~ doctor_id) if doctor_id else '' }}">+ نوبت جدید در این روز</a>
   <button type="button" class="btn ghost" data-print>چاپ برگه روز</button>
+  <a class="btn ghost" href="/day/{{ j }}/ics{{ dq }}">دانلود ICS</a>
   <a class="btn ghost" href="/calendar?m={{ j[:7] }}{{ ('&doctor=' ~ doctor_id) if doctor_id else '' }}">بازگشت به تقویم</a>
 </div>
 

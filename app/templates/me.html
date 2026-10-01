@@ -5,6 +5,7 @@
 </div>
 <div class="actions no-print">
   <button type="button" class="btn ghost" data-print>چاپ</button>
+  {% if not past %}<a class="btn ghost" href="/me.ics">دانلود تقویم (ICS)</a>{% endif %}
   {% if past %}<a class="btn ghost" href="/me">نوبت‌های پیش رو</a>
   {% else %}<a class="btn ghost" href="/me?past=1">نوبت‌های گذشته</a>{% endif %}
 </div>
