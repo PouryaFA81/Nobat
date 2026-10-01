@@ -127,6 +127,10 @@ legend { font-weight: 600; padding: 0 6px; }
 .appt-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .appt.cancelled { border-inline-start-color: var(--muted); opacity: .65; }
 .appt.cancelled .appt-time { text-decoration: line-through; }
+.appt.arrived { border-inline-start-color: #3a8f6e; }
+.appt.completed { border-inline-start-color: #5a7a9a; opacity: .9; }
+.appt.no_show { border-inline-start-color: #b07a3a; }
+.list li.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 4px; flex-wrap: wrap; }
 .tag { display: inline-block; font-size: .75rem; font-weight: 600; background: var(--line); color: var(--ink); border-radius: 999px; padding: 0 8px; margin-inline-start: 6px; vertical-align: middle; }
 .tag.green { background: var(--brand-soft); color: var(--brand); }
 .daygroup { margin-bottom: 20px; }

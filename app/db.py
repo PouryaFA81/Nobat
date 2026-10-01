@@ -12,8 +12,8 @@ from pathlib import Path
 DB_PATH = os.environ.get("DB_PATH", "/data/nobat.db")
 
 # Bump when adding a numbered script under app/migrations/.
-# Migration 0001 is the baseline matching this SCHEMA.
-SCHEMA_VERSION = 1
+# Migration 0001 is the baseline; 0002 working hours.
+SCHEMA_VERSION = 2
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -42,11 +42,23 @@ CREATE TABLE IF NOT EXISTS appointments (
     start_time    TEXT NOT NULL,          -- HH:MM, local time (TIMEZONE setting)
     duration_min  INTEGER NOT NULL DEFAULT 60,
     description   TEXT NOT NULL DEFAULT '',
-    status        TEXT NOT NULL DEFAULT 'active',   -- active | cancelled
+    status        TEXT NOT NULL DEFAULT 'active',   -- active|arrived|no_show|completed|cancelled
     reminder_sent INTEGER NOT NULL DEFAULT 0,
     created_by    INTEGER REFERENCES users(id),
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS working_hours (
+    doctor_id  INTEGER NOT NULL PRIMARY KEY,
+    start_time TEXT NOT NULL DEFAULT '06:00',
+    end_time   TEXT NOT NULL DEFAULT '24:00'
+);
+CREATE TABLE IF NOT EXISTS blocked_days (
+    id         INTEGER PRIMARY KEY,
+    day        TEXT NOT NULL,
+    doctor_id  INTEGER NOT NULL DEFAULT 0,
+    reason     TEXT NOT NULL DEFAULT '',
+    UNIQUE (day, doctor_id)
 );
 CREATE INDEX IF NOT EXISTS idx_appt_day ON appointments(day);
 CREATE INDEX IF NOT EXISTS idx_appt_doctor ON appointments(doctor_id, day);

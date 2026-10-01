@@ -3,11 +3,14 @@
 ## [Unreleased]
 
 ### Added
+- Working hours (clinic default + per-staff override) and blocked/holiday days with admin UI (`/schedule`); migration `0002`.
+- Appointment statuses: arrived, no-show, completed (plus active/cancelled); status buttons on day and me views; migration `0003`.
 - Database migration runner (`schema_migrations`, `python -m app.manage migrate`) with baseline `0001`.
 - `backup` default path under `data/backups/`, plus `backup-prune` (default 14 days) and safe `restore` (`--force` / `--to`).
 - Soft-delete (deactivate) as the default user removal path; hard delete only via `delete-user --confirm YES`.
 
 ### Changed
+- Booking validation enforces working hours and blocked days; overlap treats only cancelled as free.
 - User edit UI no longer offers permanent delete; appointments are retained when a colleague is deactivated.
 
 All notable changes to this project are documented here.
