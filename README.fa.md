@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="README.md">English</a> ·
+  <a href="docs/USER_GUIDE.fa.md">راهنمای استفاده</a> ·
   <a href="docs/INSTALL.fa.md">راهنمای نصب</a> ·
   <a href="CONTRIBUTING.md">مشارکت</a> ·
   <a href="#پشتیبانی-نصب">پشتیبانی نصب</a>

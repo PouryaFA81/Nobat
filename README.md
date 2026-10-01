@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="README.fa.md">فارسی</a> ·
+  <a href="docs/USER_GUIDE.md">User guide</a> ·
   <a href="docs/INSTALL.md">Install</a> ·
   <a href="CONTRIBUTING.md">Contribute</a> ·
   <a href="#setup-support">Setup support</a>
