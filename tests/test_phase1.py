@@ -135,7 +135,7 @@ class Phase1PanelTests(unittest.TestCase):
         r = self.book(a, self.doc_id, "داخل", days=21, hour=10)
         self.assertEqual(r.status_code, 303)
 
-    def test_blocked_day_refuses_new_keeps_existing(self):
+    def test_blocked_day_allows_booking_with_warning(self):
         a = self.client("admin", "adminpass1")
         r = self.book(a, self.doc_id, "قبلی", days=22, hour=10)
         self.assertEqual(r.status_code, 303)
@@ -143,12 +143,14 @@ class Phase1PanelTests(unittest.TestCase):
         with db.db() as c:
             schedule.add_blocked(c, d.isoformat(), 0, "تعطیل")
         r = self.book(a, self.doc_id, "جدید", days=22, hour=11)
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("بسته", r.text)
-        # Existing appointment still listed on day view
-        r = a.get(f"/day/{jalali.jstr(d)}")
+        self.assertEqual(r.status_code, 303, "blocked days must not refuse booking")
+        # Follow redirect to day view — flash carries the soft warning
+        r = a.get(r.headers["location"])
         self.assertEqual(r.status_code, 200)
+        self.assertIn("جدید", r.text)
         self.assertIn("قبلی", r.text)
+        self.assertIn("روز بسته", r.text)
+        self.assertIn("تعطیل", r.text)
 
     def test_status_transitions_and_overlap(self):
         a = self.client("admin", "adminpass1")

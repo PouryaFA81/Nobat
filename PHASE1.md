@@ -6,8 +6,8 @@
 - Tables `working_hours` and `blocked_days` (migration **0002**).
 - Clinic-wide default hours (`doctor_id = 0`), default **06:00–24:00** (same bookable starts as before: 06…23).
 - Optional per-staff override; if unset, the clinic default applies.
-- Blocked/holiday days refuse **new** bookings (clinic-wide or per staff). Existing appointments on those days still show in day/me views.
-- Validation in `_parse_appt_form` (booking and edit paths).
+- Blocked/holiday days are a **soft warning** only (clinic-wide or per staff): booking/move/reassign still succeed, with a Persian flash note. Days remain listed in the schedule UI.
+- Validation in `_parse_appt_form` (working hours hard-check; blocked days soft warning on booking and edit paths).
 - Admin UI: **ساعات کاری** (`/schedule`) — Persian, simple forms.
 
 ### 1.2 Appointment statuses

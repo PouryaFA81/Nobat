@@ -312,10 +312,13 @@ def _parse_appt_form(form, c, exclude_id=None):
     start = f"{hour:02d}:{minute:02d}"
     day_iso = day.isoformat()
 
+    # Blocked/holiday days are informational only — clinics may still book.
     blocked, reason = schedule.is_blocked(c, day_iso, doctor_id)
     if blocked:
         extra = f" ({reason})" if reason else ""
-        return v, f"این روز برای نوبت‌دهی بسته است{extra}."
+        v["_blocked_warning"] = (
+            f"توجه: این روز به‌عنوان روز بسته/تعطیل علامت خورده است{extra}."
+        )
 
     open_t, close_t = schedule.get_hours(c, doctor_id)
     hours_err = schedule.validate_within_hours(start, duration, open_t, close_t)
@@ -368,7 +371,10 @@ async def appt_new(request: Request, user):
              reminder_flag(v["_day"]), user["id"]))
         c.commit()
         appt = appt_with_topic(c, cur.lastrowid)
-    request.session["flash"] = f"نوبت ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
+    flash = f"نوبت ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
+    if v.get("_blocked_warning"):
+        flash = f"{flash} {v['_blocked_warning']}"
+    request.session["flash"] = flash
     return RedirectResponse(f"/day/{jalali.jstr(v['_day'])}", status_code=303,
                             background=BackgroundTask(notify.appointment_event, "new", appt))
 
@@ -411,7 +417,10 @@ async def appt_edit(request: Request, user):
         elif moved:
             await notify.appointment_event("moved", new, old)
 
-    request.session["flash"] = "تغییرات ذخیره شد." + (f" به {STAFF_LABEL} اطلاع داده شد." if (moved or reassigned) else "")
+    flash = "تغییرات ذخیره شد." + (f" به {STAFF_LABEL} اطلاع داده شد." if (moved or reassigned) else "")
+    if v.get("_blocked_warning"):
+        flash = f"{flash} {v['_blocked_warning']}"
+    request.session["flash"] = flash
     return RedirectResponse(f"/day/{jalali.jstr(v['_day'])}", status_code=303,
                             background=BackgroundTask(notify_changes))
 
@@ -519,7 +528,7 @@ async def schedule_settings(request: Request, user):
                 if not err:
                     day = jalali.to_gregorian(jy, jm, jd).isoformat()
                     schedule.add_blocked(c, day, doctor_id, reason)
-                    request.session["flash"] = "روز بسته ثبت شد. نوبت‌های قبلی همچنان دیده می‌شوند."
+                    request.session["flash"] = "روز بسته ثبت شد. نوبت‌دهی در این روز همچنان ممکن است؛ هنگام ثبت هشدار نشان داده می‌شود."
             elif action == "remove_blocked":
                 try:
                     bid = int(form.get("blocked_id", "0"))

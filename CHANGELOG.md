@@ -10,7 +10,7 @@
 - Soft-delete (deactivate) as the default user removal path; hard delete only via `delete-user --confirm YES`.
 
 ### Changed
-- Booking validation enforces working hours and blocked days; overlap treats only cancelled as free.
+- Booking validation enforces working hours; blocked days warn but do not refuse; overlap treats only cancelled as free.
 - User edit UI no longer offers permanent delete; appointments are retained when a colleague is deactivated.
 
 All notable changes to this project are documented here.
