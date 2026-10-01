@@ -19,17 +19,19 @@
 <header class="top">
   <a class="brand" href="/">نوبت</a>
   <nav>
-    {% if user.is_admin %}
+    {% if user.is_admin or user.is_receptionist %}
       <a href="/calendar">تقویم</a>
       <a href="/appointments/new">+ نوبت</a>
       <a href="/search">جستجو</a>
+    {% endif %}
+    {% if user.is_admin %}
       <a href="/export">خروجی CSV</a>
       <a href="/schedule">ساعات کاری</a>
       <a href="/audit">گزارش فعالیت</a>
       <a href="/users">همکاران</a>
     {% endif %}
     {% if user.is_doctor %}<a href="/me">برنامه من</a>{% endif %}
-    {% if user.is_doctor and not user.is_admin %}<a href="/search">جستجو</a>{% endif %}
+    {% if user.is_doctor and not user.is_admin and not user.is_receptionist %}<a href="/search">جستجو</a>{% endif %}
     <details class="menu">
       <summary>{{ user.name }}</summary>
       <div class="menu-body">

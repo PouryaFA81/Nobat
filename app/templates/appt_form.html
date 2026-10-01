@@ -47,6 +47,19 @@
     </select>
   </fieldset>
 
+
+  {% if not appt %}
+  <label>تکرار هفتگی <small>(همان ساعت؛ حداکثر {{ 26|fa }} هفته — در صورت تداخل هیچ‌کدام ثبت نمی‌شود)</small>
+    <select name="repeat_weeks">
+      {% for n in range(1, 27) %}
+      <option value="{{ n }}" {% if (v.repeat_weeks|default(1))|string == n|string %}selected{% endif %}>
+        {% if n == 1 %}فقط یک نوبت{% else %}{{ n|fa }} هفته{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+
   <label>توضیحات <small>(فقط شما و {{ STAFF }} همین نوبت می‌بینید؛ در اعلان فرستاده نمی‌شود)</small>
     <textarea name="description" rows="3" maxlength="1000">{{ v.description }}</textarea>
   </label>

@@ -26,7 +26,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from . import __version__, audit, db, export_csv, jalali, notify, schedule
+from . import __version__, audit, db, export_csv, ics, jalali, notify, recurrence, schedule, waitlist
 from .jalali import fa
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -117,13 +117,20 @@ def redirect(url: str, flash: str | None = None, request: Request | None = None)
     return RedirectResponse(url, status_code=303)
 
 
-def login_required(admin=False):
+def can_book(user) -> bool:
+    """Admin or receptionist may manage the shared appointment calendar."""
+    return bool(user["is_admin"] or user["is_receptionist"])
+
+
+def login_required(admin=False, booker=False):
     def deco(fn):
         async def wrapper(request: Request):
             user = current_user(request)
             if not user:
                 return RedirectResponse("/login", status_code=303)
             if admin and not user["is_admin"]:
+                return PlainTextResponse("دسترسی ندارید", status_code=403)
+            if booker and not can_book(user):
                 return PlainTextResponse("دسترسی ندارید", status_code=403)
             try:
                 return await fn(request, user)
@@ -143,6 +150,21 @@ def appt_with_topic(c, appt_id):
         "SELECT a.*, u.ntfy_topic, u.name AS doctor_name FROM appointments a "
         "JOIN users u ON u.id = a.doctor_id WHERE a.id = ?", (appt_id,)).fetchone()
     return dict(row) if row else None
+
+
+
+def slot_conflict(c, doctor_id, day_iso, start, duration, exclude_id=None):
+    """Return overlapping appointment row or None. Cancelled does not block."""
+    s, e = to_min(start), to_min(start) + duration
+    others = c.execute(
+        "SELECT id, initials, start_time, duration_min, status FROM appointments "
+        "WHERE doctor_id = ? AND day = ? AND status != 'cancelled' AND id != ?",
+        (doctor_id, day_iso, exclude_id or 0)).fetchall()
+    for o in others:
+        os_, oe = to_min(o["start_time"]), to_min(o["start_time"]) + o["duration_min"]
+        if s < oe and os_ < e:
+            return o
+    return None
 
 
 def to_min(hhmm: str) -> int:
@@ -210,7 +232,7 @@ async def home(request: Request):
     user = current_user(request)
     if not user:
         return redirect("/login")
-    return redirect("/calendar" if user["is_admin"] else "/me")
+    return redirect("/calendar" if can_book(user) else "/me")
 
 
 # ---------------------------------------------------------------- staff member view
@@ -236,8 +258,56 @@ async def my_schedule(request: Request, user):
     return render(request, "me.html", user, groups=groups, past=past, tomorrow=tomorrow)
 
 
+# ---------------------------------------------------------------- ICS downloads (no private notes)
+@login_required()
+async def my_schedule_ics(request: Request, user):
+    """Staff: download own upcoming appointments as .ics (initials only; no notes)."""
+    if not user["is_doctor"]:
+        return PlainTextResponse("دسترسی ندارید", status_code=403)
+    t = today()
+    with db.db() as c:
+        rows = c.execute(
+            "SELECT * FROM appointments WHERE doctor_id = ? AND day >= ? "
+            "ORDER BY day, start_time", (user["id"], t.isoformat())).fetchall()
+    body = ics.build_ics(rows, calname=f"نوبت — {user['name']}")
+    return Response(
+        body,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{ics.filename_for_me()}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@login_required(booker=True)
+async def day_ics(request: Request, user):
+    """Coordinator: download one day's appointments as .ics (no private notes)."""
+    try:
+        d = jalali.parse_jstr(request.path_params["jdate"])
+    except Exception:
+        return redirect("/calendar")
+    doctor_id = request.query_params.get("doctor", "")
+    q = ("SELECT a.* FROM appointments a WHERE a.day = ?")
+    args: list = [d.isoformat()]
+    if doctor_id.isdigit():
+        q += " AND a.doctor_id = ?"
+        args.append(int(doctor_id))
+    with db.db() as c:
+        rows = c.execute(q + " ORDER BY a.start_time", args).fetchall()
+    body = ics.build_ics(rows, calname=f"نوبت — {jalali.jstr(d)}")
+    return Response(
+        body,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{ics.filename_for_day(d)}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 # ---------------------------------------------------------------- coordinator: calendar
-@login_required(admin=True)
+@login_required(booker=True)
 async def calendar(request: Request, user):
     t = today()
     ty, tm, _ = jalali.to_jalali(t)
@@ -275,7 +345,7 @@ async def calendar(request: Request, user):
                   this_m=f"{ty}-{tm:02d}", docs=docs, doctor_id=doctor_id)
 
 
-@login_required(admin=True)
+@login_required(booker=True)
 async def day_view(request: Request, user):
     try:
         d = jalali.parse_jstr(request.path_params["jdate"])
@@ -293,9 +363,12 @@ async def day_view(request: Request, user):
     with db.db() as c:
         rows = c.execute(q + " ORDER BY a.status, a.start_time", args).fetchall()
         docs = doctors(c)
+        wl_doctor = int(doctor_id) if doctor_id.isdigit() else None
+        wait_rows = waitlist.list_for_day(c, d.isoformat(), wl_doctor)
     return render(request, "day.html", user, d=d.isoformat(), j=jalali.jstr(d), rows=rows,
                   prev=jalali.jstr(d - timedelta(days=1)), next=jalali.jstr(d + timedelta(days=1)),
-                  docs=docs, doctor_id=doctor_id)
+                  docs=docs, doctor_id=doctor_id, wait_rows=wait_rows,
+                  hours=HOURS, minutes=MINUTES, durations=DURATIONS)
 
 
 # ---------------------------------------------------------------- coordinator: appointment form
@@ -337,17 +410,11 @@ def _parse_appt_form(form, c, exclude_id=None):
     if hours_err:
         return v, hours_err
 
-    s, e = to_min(start), to_min(start) + duration
     # Cancelled frees the slot; every other status (incl. unknown) still occupies it.
-    others = c.execute(
-        "SELECT id, initials, start_time, duration_min, status FROM appointments "
-        "WHERE doctor_id = ? AND day = ? AND status != 'cancelled' AND id != ?",
-        (doctor_id, day_iso, exclude_id or 0)).fetchall()
-    for o in others:
-        os_, oe = to_min(o["start_time"]), to_min(o["start_time"]) + o["duration_min"]
-        if s < oe and os_ < e:
-            return v, (f"تداخل: {doc['name']} در این زمان نوبت دیگری دارد "
-                       f"({o['initials']}، ساعت {fa(o['start_time'])}).")
+    o = slot_conflict(c, doctor_id, day_iso, start, duration, exclude_id)
+    if o:
+        return v, (f"تداخل: {doc['name']} در این زمان نوبت دیگری دارد "
+                   f"({o['initials']}، ساعت {fa(o['start_time'])}).")
     v.update(doctor_id=doctor_id, day=day_iso, start_time=start, duration=duration, _day=day)
     return v, None
 
@@ -359,7 +426,7 @@ def _form_ctx(c, v, title, action, appt=None):
                 years=year_choices(t), hours=HOURS, minutes=MINUTES, durations=DURATIONS)
 
 
-@login_required(admin=True)
+@login_required(booker=True)
 async def appt_new(request: Request, user):
     with db.db() as c:
         if request.method == "GET":
@@ -369,33 +436,67 @@ async def appt_new(request: Request, user):
                 d = today()
             jy, jm, jd = jalali.to_jalali(d)
             v = dict(doctor_id=request.query_params.get("doctor", ""), initials="", jy=jy, jm=jm, jd=jd,
-                     hour=16, minute=0, duration=60, description="")
+                     hour=16, minute=0, duration=60, description="", repeat_weeks=1)
             return render(request, "appt_form.html", user, **_form_ctx(c, v, "نوبت جدید", "/appointments/new"))
         form = await form_checked(request)
         v, err = _parse_appt_form(form, c)
+        v["repeat_weeks"] = recurrence.parse_repeat_weeks(form.get("repeat_weeks", "1"))
         if err:
             return render(request, "appt_form.html", user, error=err, status_code=400,
                           **_form_ctx(c, v, "نوبت جدید", "/appointments/new"))
-        cur = c.execute(
-            "INSERT INTO appointments (doctor_id, initials, day, start_time, duration_min, description, "
-            "reminder_sent, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (v["doctor_id"], v["initials"], v["day"], v["start_time"], v["duration"], v["description"],
-             reminder_flag(v["_day"]), user["id"]))
-        appt_id = cur.lastrowid
-        audit.record(user, audit.BOOK, appointment_id=appt_id, conn=c,
-                     detail={"day": v["day"], "start": v["start_time"], "doctor_id": v["doctor_id"],
-                             "initials": v["initials"]})
+        days = recurrence.weekly_dates(v["_day"], v["repeat_weeks"])
+        # Pre-check every weekly slot (fail whole series on first conflict / hours error).
+        doc_name = c.execute("SELECT name FROM users WHERE id = ?", (v["doctor_id"],)).fetchone()["name"]
+        blocked_notes = []
+        for d in days:
+            day_iso = d.isoformat()
+            open_t, close_t = schedule.get_hours(c, v["doctor_id"])
+            hours_err = schedule.validate_within_hours(v["start_time"], v["duration"], open_t, close_t)
+            if hours_err:
+                return render(request, "appt_form.html", user, error=f"{jalali.jstr(d)}: {hours_err}",
+                              status_code=400, **_form_ctx(c, v, "نوبت جدید", "/appointments/new"))
+            o = slot_conflict(c, v["doctor_id"], day_iso, v["start_time"], v["duration"])
+            if o:
+                err = (f"تداخل در سری ({jalali.jstr(d)}): {doc_name} نوبت دیگری دارد "
+                       f"({o['initials']}، ساعت {fa(o['start_time'])}). سری ثبت نشد.")
+                return render(request, "appt_form.html", user, error=err, status_code=400,
+                              **_form_ctx(c, v, "نوبت جدید", "/appointments/new"))
+            blocked, reason = schedule.is_blocked(c, day_iso, v["doctor_id"])
+            if blocked:
+                extra = f" ({reason})" if reason else ""
+                blocked_notes.append(f"{jalali.jstr(d)}{extra}")
+        series_id = recurrence.new_series_id() if len(days) > 1 else None
+        first_id = None
+        first_appt = None
+        for d in days:
+            cur = c.execute(
+                "INSERT INTO appointments (doctor_id, initials, day, start_time, duration_min, description, "
+                "reminder_sent, created_by, series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (v["doctor_id"], v["initials"], d.isoformat(), v["start_time"], v["duration"],
+                 v["description"], reminder_flag(d), user["id"], series_id))
+            appt_id = cur.lastrowid
+            if first_id is None:
+                first_id = appt_id
+            audit.record(user, audit.BOOK, appointment_id=appt_id, conn=c,
+                         detail={"day": d.isoformat(), "start": v["start_time"],
+                                 "doctor_id": v["doctor_id"], "initials": v["initials"],
+                                 "series_id": series_id})
         c.commit()
-        appt = appt_with_topic(c, appt_id)
-    flash = f"نوبت ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
-    if v.get("_blocked_warning"):
+        first_appt = appt_with_topic(c, first_id)
+    if series_id:
+        flash = f"{fa(len(days))} نوبت هفتگی ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
+    else:
+        flash = f"نوبت ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
+    if blocked_notes:
+        flash = f"{flash} توجه: روز بسته/تعطیل: {', '.join(blocked_notes)}."
+    elif v.get("_blocked_warning"):
         flash = f"{flash} {v['_blocked_warning']}"
     request.session["flash"] = flash
     return RedirectResponse(f"/day/{jalali.jstr(v['_day'])}", status_code=303,
-                            background=BackgroundTask(notify.appointment_event, "new", appt))
+                            background=BackgroundTask(notify.appointment_event, "new", first_appt))
 
 
-@login_required(admin=True)
+@login_required(booker=True)
 async def appt_edit(request: Request, user):
     appt_id = request.path_params["id"]
     with db.db() as c:
@@ -452,20 +553,143 @@ async def appt_edit(request: Request, user):
                             background=BackgroundTask(notify_changes))
 
 
-@login_required(admin=True)
+@login_required(booker=True)
 async def appt_cancel(request: Request, user):
-    await form_checked(request)
+    form = await form_checked(request)
+    scope = str(form.get("cancel_scope", "one")).strip()
+    promote_info = None
+    promoted_appt = None
     with db.db() as c:
         appt = appt_with_topic(c, request.path_params["id"])
         if not appt or appt["status"] == "cancelled":
             return redirect("/calendar")
-        c.execute("UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?",
-                  (appt["id"],))
-        audit.record(user, audit.CANCEL, appointment_id=appt["id"], conn=c,
-                     detail={"day": appt["day"], "start": appt["start_time"], "doctor_id": appt["doctor_id"]})
-    request.session["flash"] = f"نوبت لغو شد و به {STAFF_LABEL} اطلاع داده شد."
+        if scope == "series" and appt.get("series_id"):
+            rows = c.execute(
+                "SELECT id FROM appointments WHERE series_id = ? AND status != 'cancelled'",
+                (appt["series_id"],),
+            ).fetchall()
+            cancelled_ids = [r["id"] for r in rows]
+            c.execute(
+                "UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') "
+                "WHERE series_id = ? AND status != 'cancelled'",
+                (appt["series_id"],),
+            )
+            audit.record(user, audit.CANCEL, appointment_id=appt["id"], conn=c,
+                         detail={"day": appt["day"], "start": appt["start_time"],
+                                 "doctor_id": appt["doctor_id"], "scope": "series",
+                                 "series_id": appt["series_id"], "count": len(cancelled_ids)})
+            flash = f"{fa(len(cancelled_ids))} نوبت این سری لغو شد و به {STAFF_LABEL} اطلاع داده شد."
+        else:
+            c.execute("UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?",
+                      (appt["id"],))
+            audit.record(user, audit.CANCEL, appointment_id=appt["id"], conn=c,
+                         detail={"day": appt["day"], "start": appt["start_time"],
+                                 "doctor_id": appt["doctor_id"], "scope": "one"})
+            flash = f"نوبت لغو شد و به {STAFF_LABEL} اطلاع داده شد."
+            # Auto-promote next waitlist entry for this staff + day into the freed slot.
+            promote_info = _try_promote_waitlist(
+                c, user, doctor_id=appt["doctor_id"], day_iso=appt["day"],
+                freed_start=appt["start_time"], freed_duration=appt["duration_min"])
+        if promote_info:
+            flash = (
+                f"{flash} از فهرست انتظار ارتقا یافت: {promote_info['initials']} "
+                f"ساعت {fa(promote_info['start'])}."
+            )
+            promoted_appt = appt_with_topic(c, promote_info["appt_id"])
+    request.session["flash"] = flash
+
+    async def after_cancel():
+        await notify.appointment_event("cancelled", appt)
+        if promoted_appt:
+            await notify.appointment_event("new", promoted_appt)
+
     return RedirectResponse(f"/day/{jalali.jstr(date.fromisoformat(appt['day']))}", status_code=303,
-                            background=BackgroundTask(notify.appointment_event, "cancelled", appt))
+                            background=BackgroundTask(after_cancel))
+
+
+def _try_promote_waitlist(c, user, *, doctor_id, day_iso, freed_start, freed_duration):
+    """Promote oldest waiting entry if a free slot fits. Returns dict or None.
+
+    Auto-promote is intentional (Phase 4): cancelling an active appointment
+    books the next waitlist row for the same staff+day when hours/overlap allow.
+    """
+    entry = waitlist.next_waiting(c, doctor_id, day_iso)
+    if not entry:
+        return None
+    start = waitlist.choose_promote_time(entry, freed_start)
+    duration = int(entry["duration_min"] or freed_duration or 60)
+    open_t, close_t = schedule.get_hours(c, doctor_id)
+
+    def usable(st, dur):
+        if schedule.validate_within_hours(st, dur, open_t, close_t):
+            return False
+        if slot_conflict(c, doctor_id, day_iso, st, dur):
+            return False
+        return True
+
+    if not usable(start, duration):
+        start = freed_start
+        duration = int(freed_duration or 60)
+        if not usable(start, duration):
+            return None
+    day = date.fromisoformat(day_iso)
+    cur = c.execute(
+        "INSERT INTO appointments (doctor_id, initials, day, start_time, duration_min, description, "
+        "reminder_sent, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (doctor_id, entry["initials"], day_iso, start, duration, entry["note"] or "",
+         reminder_flag(day), user["id"]))
+    appt_id = cur.lastrowid
+    waitlist.mark_promoted(c, entry["id"], appt_id)
+    audit.record(user, audit.BOOK, appointment_id=appt_id, conn=c,
+                 detail={"day": day_iso, "start": start, "doctor_id": doctor_id,
+                         "initials": entry["initials"], "from_waitlist": entry["id"]})
+    return {"appt_id": appt_id, "initials": entry["initials"], "start": start}
+
+
+
+# ---------------------------------------------------------------- waitlist
+@login_required(booker=True)
+async def waitlist_add(request: Request, user):
+    form = await form_checked(request)
+    try:
+        doctor_id = int(form.get("doctor_id", "0"))
+        jy, jm, jd = (int(jalali.en_digits(str(form.get(k, "")))) for k in ("jy", "jm", "jd"))
+        duration = int(form.get("duration") or "60")
+        hour = int(form.get("hour") or "-1")
+        minute = int(form.get("minute") or "0")
+    except ValueError:
+        return redirect("/calendar", "اطلاعات فهرست انتظار ناقص است.", request)
+    initials = str(form.get("initials", "")).strip()[:30]
+    note = str(form.get("note", "")).strip()[:1000]
+    preferred = ""
+    if 0 <= hour < 24 and 0 <= minute < 60:
+        preferred = f"{hour:02d}:{minute:02d}"
+    if not initials or not jalali.valid(jy, jm, jd):
+        return redirect("/calendar", "حروف اول و تاریخ را کامل کنید.", request)
+    day = jalali.to_gregorian(jy, jm, jd)
+    with db.db() as c:
+        doc = c.execute(
+            "SELECT id FROM users WHERE id = ? AND is_doctor = 1 AND active = 1", (doctor_id,)
+        ).fetchone()
+        if not doc:
+            return redirect(f"/day/{jalali.jstr(day)}", f"{STAFF_LABEL} نامعتبر است.", request)
+        waitlist.add_entry(
+            c, doctor_id=doctor_id, day_iso=day.isoformat(), initials=initials,
+            preferred_time=preferred, duration_min=duration, note=note, created_by=user["id"])
+    return redirect(f"/day/{jalali.jstr(day)}", "به فهرست انتظار اضافه شد.", request)
+
+
+@login_required(booker=True)
+async def waitlist_cancel(request: Request, user):
+    await form_checked(request)
+    wid = int(request.path_params["id"])
+    with db.db() as c:
+        row = c.execute("SELECT * FROM waitlist WHERE id = ?", (wid,)).fetchone()
+        if not row:
+            return redirect("/calendar")
+        waitlist.cancel_entry(c, wid)
+        day = row["day"]
+    return redirect(f"/day/{jalali.jstr(date.fromisoformat(day))}", "از فهرست انتظار حذف شد.", request)
 
 
 # ---------------------------------------------------------------- status updates
@@ -480,10 +704,10 @@ async def appt_set_status(request: Request, user):
     with db.db() as c:
         appt = c.execute("SELECT * FROM appointments WHERE id = ?", (appt_id,)).fetchone()
         if not appt:
-            return redirect("/calendar" if user["is_admin"] else "/me")
-        if not user["is_admin"] and appt["doctor_id"] != user["id"]:
+            return redirect("/calendar" if can_book(user) else "/me")
+        if not can_book(user) and appt["doctor_id"] != user["id"]:
             return PlainTextResponse("دسترسی ندارید", status_code=403)
-        if appt["status"] == "cancelled" and not user["is_admin"]:
+        if appt["status"] == "cancelled" and not can_book(user):
             return PlainTextResponse("نوبت لغو شده را نمی‌توانید تغییر دهید.", status_code=400)
         c.execute(
             "UPDATE appointments SET status = ?, updated_at = datetime('now') WHERE id = ?",
@@ -492,7 +716,7 @@ async def appt_set_status(request: Request, user):
                      detail={"from": appt["status"], "to": new_status})
     label = schedule.status_label(new_status)
     request.session["flash"] = f"وضعیت نوبت: {label}"
-    if user["is_admin"]:
+    if can_book(user):
         return redirect(f"/day/{jalali.jstr(date.fromisoformat(appt['day']))}", request=request)
     past = request.query_params.get("past") == "1"
     return redirect("/me?past=1" if past else "/me", request=request)
@@ -628,6 +852,7 @@ def _user_form_values(form):
                 username=jalali.en_digits(str(form.get("username", ""))).strip().lower()[:40],
                 password=str(form.get("password", "")),
                 is_admin=form.get("is_admin") == "1", is_doctor=form.get("is_doctor") == "1",
+                is_receptionist=form.get("is_receptionist") == "1",
                 active=form.get("active") == "1")
 
 
@@ -635,7 +860,7 @@ def _user_form_values(form):
 async def user_new(request: Request, user):
     if request.method == "GET":
         return render(request, "user_form.html", user, u=None,
-                      v=dict(name="", username="", is_admin=False, is_doctor=True, active=True))
+                      v=dict(name="", username="", is_admin=False, is_doctor=True, is_receptionist=False, active=True))
     v = _user_form_values(await form_checked(request))
     err = None
     if not v["name"] or not v["username"]:
@@ -649,7 +874,8 @@ async def user_new(request: Request, user):
             if c.execute("SELECT 1 FROM users WHERE username = ?", (v["username"],)).fetchone():
                 err = "این نام کاربری قبلاً استفاده شده است."
             else:
-                uid = db.create_user(c, v["username"], v["name"], v["password"], v["is_admin"], v["is_doctor"])
+                uid = db.create_user(c, v["username"], v["name"], v["password"], v["is_admin"], v["is_doctor"],
+                                  v["is_receptionist"])
     if err:
         return render(request, "user_form.html", user, u=None, v=v, error=err, status_code=400)
     return redirect(f"/users/{uid}/edit", "کاربر ساخته شد. اطلاعات ورود و اعلان را به او بدهید.", request)
@@ -676,8 +902,9 @@ async def user_edit(request: Request, user):
             return render(request, "user_form.html", user, u=u, v=v, error=err,
                           ntfy_public=NTFY_PUBLIC_URL, status_code=400)
         was_active = bool(u["active"])
-        c.execute("UPDATE users SET name = ?, is_admin = ?, is_doctor = ?, active = ? WHERE id = ?",
-                  (v["name"], int(v["is_admin"]), int(v["is_doctor"]), int(v["active"]), uid))
+        c.execute("UPDATE users SET name = ?, is_admin = ?, is_doctor = ?, is_receptionist = ?, active = ? WHERE id = ?",
+                  (v["name"], int(v["is_admin"]), int(v["is_doctor"]), int(v["is_receptionist"]),
+                   int(v["active"]), uid))
         if v["password"]:
             c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (db.hash_password(v["password"]), uid))
         if was_active and not v["active"]:
@@ -834,7 +1061,7 @@ async def search_appointments(request: Request, user):
     if len(q) >= 1:
         like = f"%{q}%"
         with db.db() as c:
-            if user["is_admin"]:
+            if can_book(user):
                 rows = c.execute(
                     "SELECT a.*, u.name AS doctor_name, cu.name AS created_by_name "
                     "FROM appointments a JOIN users u ON u.id = a.doctor_id "
@@ -934,12 +1161,16 @@ routes = [
     Route("/login", login, methods=["GET", "POST"]),
     Route("/logout", logout, methods=["POST"]),
     Route("/me", my_schedule),
+    Route("/me.ics", my_schedule_ics),
     Route("/calendar", calendar),
+    Route("/day/{jdate}/ics", day_ics),
     Route("/day/{jdate}", day_view),
     Route("/appointments/new", appt_new, methods=["GET", "POST"]),
     Route("/appointments/{id:int}/edit", appt_edit, methods=["GET", "POST"]),
     Route("/appointments/{id:int}/cancel", appt_cancel, methods=["POST"]),
     Route("/appointments/{id:int}/status", appt_set_status, methods=["POST"]),
+    Route("/waitlist/add", waitlist_add, methods=["POST"]),
+    Route("/waitlist/{id:int}/cancel", waitlist_cancel, methods=["POST"]),
     Route("/schedule", schedule_settings, methods=["GET", "POST"]),
     Route("/audit", audit_log_view),
     Route("/export", export_form),

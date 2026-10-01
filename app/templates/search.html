@@ -4,6 +4,8 @@
 <div class="bar"><h1 class="month">جستجوی حروف اول</h1></div>
 {% if user.is_admin %}
 <p class="hint">جستجو در همهٔ نوبت‌ها. برای خروجی بازه‌ای از <a href="/export">خروجی CSV</a> استفاده کنید.</p>
+{% elif user.is_receptionist %}
+<p class="hint">جستجو در همهٔ نوبت‌ها (نقش پذیرش).</p>
 {% else %}
 <p class="hint">فقط نوبت‌های برنامهٔ خودتان جستجو می‌شود.</p>
 {% endif %}
@@ -25,13 +27,13 @@
       <div class="appt-time">{{ a.start_time|fa }}<small>{{ a.duration_min|fa }} دقیقه</small></div>
       <div class="appt-body">
         <div class="appt-title">{{ a.initials }}
-          {% if user.is_admin %}<span class="who">— {{ a.doctor_name }}</span>{% endif %}
+          {% if (user.is_admin or user.is_receptionist) %}<span class="who">— {{ a.doctor_name }}</span>{% endif %}
           {% if a.status != 'active' %}<span class="tag {% if a.status == 'arrived' or a.status == 'completed' %}green{% endif %}">{{ a.status|status_label }}</span>{% endif %}
         </div>
         <div class="hint">{{ a.day|long_date }}{% if a.created_by_name %} · ثبت‌کننده: {{ a.created_by_name }}{% endif %}</div>
         {% if a.description %}<div class="desc">{{ a.description }}</div>{% endif %}
       </div>
-      {% if user.is_admin %}
+      {% if (user.is_admin or user.is_receptionist) %}
       <div class="appt-actions no-print">
         <a class="btn small" href="/day/{{ a.day|jstr }}">برگه روز</a>
         <a class="btn small" href="/appointments/{{ a.id }}/edit">ویرایش</a>

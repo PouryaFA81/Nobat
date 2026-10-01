@@ -12,8 +12,9 @@ from pathlib import Path
 DB_PATH = os.environ.get("DB_PATH", "/data/nobat.db")
 
 # Bump when adding a numbered script under app/migrations/.
-# Migration 0001 baseline; 0002 working hours; 0003 status docs; 0004 audit log.
-SCHEMA_VERSION = 4
+# Migration 0001 baseline; 0002 working hours; 0003 status docs; 0004 audit log;
+# 0005 receptionist; 0006 recurring series; 0007 waitlist.
+SCHEMA_VERSION = 7
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     is_admin      INTEGER NOT NULL DEFAULT 0,
     is_doctor     INTEGER NOT NULL DEFAULT 1,
+    is_receptionist INTEGER NOT NULL DEFAULT 0,
     active        INTEGER NOT NULL DEFAULT 1,
     ntfy_topic    TEXT NOT NULL UNIQUE,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -45,6 +47,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     status        TEXT NOT NULL DEFAULT 'active',   -- active|arrived|no_show|completed|cancelled
     reminder_sent INTEGER NOT NULL DEFAULT 0,
     created_by    INTEGER REFERENCES users(id),
+    series_id     TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -71,9 +74,27 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_appt_day ON appointments(day);
 CREATE INDEX IF NOT EXISTS idx_appt_doctor ON appointments(doctor_id, day);
+CREATE INDEX IF NOT EXISTS idx_appt_series ON appointments(series_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, created_at);
+
+CREATE TABLE IF NOT EXISTS waitlist (
+    id                       INTEGER PRIMARY KEY,
+    doctor_id                INTEGER NOT NULL REFERENCES users(id),
+    day                      TEXT NOT NULL,
+    preferred_time           TEXT NOT NULL DEFAULT '',
+    duration_min             INTEGER NOT NULL DEFAULT 60,
+    initials                 TEXT NOT NULL,
+    note                     TEXT NOT NULL DEFAULT '',
+    status                   TEXT NOT NULL DEFAULT 'waiting',
+    created_by               INTEGER REFERENCES users(id),
+    created_at               TEXT NOT NULL DEFAULT (datetime('now')),
+    promoted_appointment_id  INTEGER,
+    updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_waitlist_queue
+    ON waitlist(day, doctor_id, status, id);
 """
 
 
@@ -93,6 +114,30 @@ def db():
         conn.commit()
     finally:
         conn.close()
+
+
+
+def _table_columns(c: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in c.execute(f"PRAGMA table_info({table})")}
+
+
+def _ensure_columns(c: sqlite3.Connection) -> None:
+    """Idempotent ADD COLUMN / CREATE for Phase 4+ fields (safe on fresh + upgrade)."""
+    tables = {r[0] for r in c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if "users" in tables:
+        cols = _table_columns(c, "users")
+        if "is_receptionist" not in cols:
+            c.execute(
+                "ALTER TABLE users ADD COLUMN is_receptionist INTEGER NOT NULL DEFAULT 0"
+            )
+    if "appointments" in tables:
+        acols = _table_columns(c, "appointments")
+        if "series_id" not in acols:
+            c.execute("ALTER TABLE appointments ADD COLUMN series_id TEXT")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_appt_series ON appointments(series_id)")
+    from . import waitlist as _waitlist  # local import avoids cycle at module load
+    _waitlist.ensure_table(c)
 
 
 def _migration_files() -> list[tuple[int, str, Path]]:
@@ -133,6 +178,7 @@ def migrate(c: sqlite3.Connection | None = None) -> list[int]:
             "name TEXT NOT NULL, "
             "applied_at TEXT NOT NULL DEFAULT (datetime('now')))"
         )
+        _ensure_columns(conn)
         have = current_migration_version(conn)
         for version, name, path in _migration_files():
             if version <= have:
@@ -144,6 +190,7 @@ def migrate(c: sqlite3.Connection | None = None) -> list[int]:
                 (version, name),
             )
             applied.append(version)
+        _ensure_columns(conn)
         if own:
             conn.commit()
     finally:
@@ -180,11 +227,13 @@ def new_topic() -> str:
     return "nb_" + secrets.token_urlsafe(18).replace("-", "x").replace("_", "y")
 
 
-def create_user(c, username, name, password, is_admin=False, is_doctor=True) -> int:
+def create_user(c, username, name, password, is_admin=False, is_doctor=True,
+                is_receptionist=False) -> int:
     cur = c.execute(
-        "INSERT INTO users (username, name, password_hash, is_admin, is_doctor, ntfy_topic) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO users (username, name, password_hash, is_admin, is_doctor, "
+        "is_receptionist, ntfy_topic) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (username.strip(), name.strip(), hash_password(password),
-         int(is_admin), int(is_doctor), new_topic()),
+         int(is_admin), int(is_doctor), int(is_receptionist), new_topic()),
     )
     return cur.lastrowid
