@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="نوبت">
-<link rel="stylesheet" href="/static/style.css?v=3">
+<link rel="stylesheet" href="/static/style.css?v=4">
 <script src="/static/app.js?v=2" defer></script>
 </head>
 <body>
@@ -22,6 +22,7 @@
     {% if user.is_admin %}
       <a href="/calendar">تقویم</a>
       <a href="/appointments/new">+ نوبت</a>
+      <a href="/schedule">ساعات کاری</a>
       <a href="/users">همکاران</a>
     {% endif %}
     {% if user.is_doctor %}<a href="/me">برنامه من</a>{% endif %}

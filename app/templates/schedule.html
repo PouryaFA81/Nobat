@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="bar"><h1 class="month">ساعات کاری و روزهای بسته</h1></div>
+<p class="hint">روزهای بسته فقط هشدار می‌دهند و مانع ثبت نوبت نمی‌شوند. اگر برای همکاری بازهٔ جدا نگذارید، از ساعت کلینیک استفاده می‌شود (پیش‌فرض ۰۶:۰۰ تا ۲۴:۰۰).</p>
+
+<section class="card form" style="margin-bottom:1.25rem">
+  <h2>ساعت کاری کلینیک</h2>
+  <form method="post" action="/schedule" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="action" value="clinic_hours">
+    <div class="row3 time" dir="ltr">
+      <label>شروع
+        <input name="start_time" value="{{ clinic_start }}" maxlength="5" placeholder="06:00" required dir="ltr">
+      </label>
+      <span class="colon">تا</span>
+      <label>پایان
+        <input name="end_time" value="{{ clinic_end }}" maxlength="5" placeholder="24:00" required dir="ltr">
+      </label>
+    </div>
+    <p class="hint">نوبت باید داخل این بازه شروع شود و تمام شود. برای پایان روز از ۲۴:۰۰ استفاده کنید.</p>
+    <div class="form-actions"><button class="btn primary">ذخیره ساعت کلینیک</button></div>
+  </form>
+</section>
+
+<section class="card form" style="margin-bottom:1.25rem">
+  <h2>بازهٔ اختصاصی {{ STAFF }}</h2>
+  <form method="post" action="/schedule" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="action" value="staff_hours">
+    <label>{{ STAFF }}
+      <select name="doctor_id" required>
+        <option value="">— انتخاب کنید —</option>
+        {% for d in docs %}
+        <option value="{{ d.id }}">{{ d.name }}{% if d.id in staff_hours %} ({{ staff_hours[d.id][0] }}–{{ staff_hours[d.id][1] }}){% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="row3 time" dir="ltr">
+      <label>شروع
+        <input name="start_time" maxlength="5" placeholder="08:00" dir="ltr">
+      </label>
+      <span class="colon">تا</span>
+      <label>پایان
+        <input name="end_time" maxlength="5" placeholder="16:00" dir="ltr">
+      </label>
+    </div>
+    <label class="check"><input type="checkbox" name="use_default" value="1"> استفاده از پیش‌فرض کلینیک (حذف بازهٔ اختصاصی)</label>
+    <div class="form-actions"><button class="btn primary">ذخیره بازهٔ {{ STAFF }}</button></div>
+  </form>
+  {% if staff_hours %}
+  <ul class="list" style="margin-top:12px">
+    {% for d in docs if d.id in staff_hours %}
+    <li><strong>{{ d.name }}</strong> <span class="sub" dir="ltr">{{ staff_hours[d.id][0] }} – {{ staff_hours[d.id][1] }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="card form" style="margin-bottom:1.25rem">
+  <h2>بستن روز (تعطیل / مرخصی)</h2>
+  <form method="post" action="/schedule" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="action" value="add_blocked">
+    <fieldset>
+      <legend>تاریخ</legend>
+      <div class="row3">
+        <select name="jd" aria-label="روز">
+          {% for i in range(1, 32) %}<option value="{{ i }}" {% if jd|string == i|string %}selected{% endif %}>{{ i|fa }}</option>{% endfor %}
+        </select>
+        <select name="jm" aria-label="ماه">
+          {% for m in MONTHS %}<option value="{{ loop.index }}" {% if jm|string == loop.index|string %}selected{% endif %}>{{ m }}</option>{% endfor %}
+        </select>
+        <select name="jy" aria-label="سال">
+          {% for y in years %}<option value="{{ y }}" {% if jy|string == y|string %}selected{% endif %}>{{ y|fa }}</option>{% endfor %}
+        </select>
+      </div>
+    </fieldset>
+    <label>{{ STAFF }} <small>(خالی = همه)</small>
+      <select name="doctor_id">
+        <option value="0">همهٔ همکاران</option>
+        {% for d in docs %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>توضیح <small>(اختیاری)</small>
+      <input name="reason" maxlength="200" placeholder="مثلاً تعطیل رسمی">
+    </label>
+    <div class="form-actions"><button class="btn primary">بستن این روز</button></div>
+  </form>
+</section>
+
+{% if blocked %}
+<section>
+  <h2>روزهای بسته</h2>
+  <ul class="list card">
+    {% for b in blocked %}
+    <li class="row">
+      <div>
+        <strong>{{ b.day|long_date }}</strong>
+        <span class="sub">{% if b.doctor_id == 0 %}همه{% else %}{{ b.doctor_name or STAFF }}{% endif %}{% if b.reason %} — {{ b.reason }}{% endif %}</span>
+      </div>
+      <form method="post" action="/schedule">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="action" value="remove_blocked">
+        <input type="hidden" name="blocked_id" value="{{ b.id }}">
+        <button class="btn small danger">حذف</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

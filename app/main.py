@@ -26,7 +26,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from . import __version__, db, jalali, notify
+from . import __version__, db, jalali, notify, schedule
 from .jalali import fa
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -51,8 +51,11 @@ templates = Jinja2Templates(directory=str(HERE / "templates"))
 templates.env.filters["fa"] = fa
 templates.env.filters["long_date"] = lambda s: jalali.long_date(date.fromisoformat(s))
 templates.env.filters["jstr"] = lambda s: jalali.jstr(date.fromisoformat(s))
+templates.env.filters["status_label"] = schedule.status_label
 templates.env.globals.update(MONTHS=jalali.MONTHS, STAFF=STAFF_LABEL, STAFF_PL=STAFF_LABEL_PLURAL,
-                             SOURCE_URL=SOURCE_URL, VERSION=__version__)
+                             SOURCE_URL=SOURCE_URL, VERSION=__version__,
+                             STATUS_LABELS=schedule.STATUS_LABELS,
+                             SLOT_BLOCKING=sorted(schedule.SLOT_BLOCKING))
 
 DURATIONS = [15, 30, 45, 60, 75, 90, 120]
 HOURS = list(range(6, 24))
@@ -237,7 +240,7 @@ async def calendar(request: Request, user):
     first = jalali.to_gregorian(jy, jm, 1)
     n = jalali.month_length(jy, jm)
     last = first + timedelta(days=n - 1)
-    q = ("SELECT day, COUNT(*) AS n FROM appointments WHERE status = 'active' AND day BETWEEN ? AND ?")
+    q = ("SELECT day, COUNT(*) AS n FROM appointments WHERE status != 'cancelled' AND day BETWEEN ? AND ?")
     args = [first.isoformat(), last.isoformat()]
     if doctor_id.isdigit():
         q += " AND doctor_id = ?"
@@ -307,17 +310,33 @@ def _parse_appt_form(form, c, exclude_id=None):
         return v, "ساعت یا مدت جلسه نامعتبر است."
     day = jalali.to_gregorian(jy, jm, jd)
     start = f"{hour:02d}:{minute:02d}"
+    day_iso = day.isoformat()
+
+    # Blocked/holiday days are informational only — clinics may still book.
+    blocked, reason = schedule.is_blocked(c, day_iso, doctor_id)
+    if blocked:
+        extra = f" ({reason})" if reason else ""
+        v["_blocked_warning"] = (
+            f"توجه: این روز به‌عنوان روز بسته/تعطیل علامت خورده است{extra}."
+        )
+
+    open_t, close_t = schedule.get_hours(c, doctor_id)
+    hours_err = schedule.validate_within_hours(start, duration, open_t, close_t)
+    if hours_err:
+        return v, hours_err
+
     s, e = to_min(start), to_min(start) + duration
+    # Cancelled frees the slot; every other status (incl. unknown) still occupies it.
     others = c.execute(
-        "SELECT id, initials, start_time, duration_min FROM appointments "
-        "WHERE doctor_id = ? AND day = ? AND status = 'active' AND id != ?",
-        (doctor_id, day.isoformat(), exclude_id or 0)).fetchall()
+        "SELECT id, initials, start_time, duration_min, status FROM appointments "
+        "WHERE doctor_id = ? AND day = ? AND status != 'cancelled' AND id != ?",
+        (doctor_id, day_iso, exclude_id or 0)).fetchall()
     for o in others:
         os_, oe = to_min(o["start_time"]), to_min(o["start_time"]) + o["duration_min"]
         if s < oe and os_ < e:
             return v, (f"تداخل: {doc['name']} در این زمان نوبت دیگری دارد "
                        f"({o['initials']}، ساعت {fa(o['start_time'])}).")
-    v.update(doctor_id=doctor_id, day=day.isoformat(), start_time=start, duration=duration, _day=day)
+    v.update(doctor_id=doctor_id, day=day_iso, start_time=start, duration=duration, _day=day)
     return v, None
 
 
@@ -352,7 +371,10 @@ async def appt_new(request: Request, user):
              reminder_flag(v["_day"]), user["id"]))
         c.commit()
         appt = appt_with_topic(c, cur.lastrowid)
-    request.session["flash"] = f"نوبت ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
+    flash = f"نوبت ثبت شد و به {STAFF_LABEL} اطلاع داده شد."
+    if v.get("_blocked_warning"):
+        flash = f"{flash} {v['_blocked_warning']}"
+    request.session["flash"] = flash
     return RedirectResponse(f"/day/{jalali.jstr(v['_day'])}", status_code=303,
                             background=BackgroundTask(notify.appointment_event, "new", appt))
 
@@ -395,7 +417,10 @@ async def appt_edit(request: Request, user):
         elif moved:
             await notify.appointment_event("moved", new, old)
 
-    request.session["flash"] = "تغییرات ذخیره شد." + (f" به {STAFF_LABEL} اطلاع داده شد." if (moved or reassigned) else "")
+    flash = "تغییرات ذخیره شد." + (f" به {STAFF_LABEL} اطلاع داده شد." if (moved or reassigned) else "")
+    if v.get("_blocked_warning"):
+        flash = f"{flash} {v['_blocked_warning']}"
+    request.session["flash"] = flash
     return RedirectResponse(f"/day/{jalali.jstr(v['_day'])}", status_code=303,
                             background=BackgroundTask(notify_changes))
 
@@ -412,6 +437,140 @@ async def appt_cancel(request: Request, user):
     request.session["flash"] = f"نوبت لغو شد و به {STAFF_LABEL} اطلاع داده شد."
     return RedirectResponse(f"/day/{jalali.jstr(date.fromisoformat(appt['day']))}", status_code=303,
                             background=BackgroundTask(notify.appointment_event, "cancelled", appt))
+
+
+# ---------------------------------------------------------------- status updates
+@login_required()
+async def appt_set_status(request: Request, user):
+    """Set appointment status (admin any; staff only own, non-cancel). Cancel stays on /cancel."""
+    form = await form_checked(request)
+    new_status = str(form.get("status", "")).strip()
+    if new_status not in schedule.STATUSES or new_status == "cancelled":
+        return PlainTextResponse("وضعیت نامعتبر است.", status_code=400)
+    appt_id = request.path_params["id"]
+    with db.db() as c:
+        appt = c.execute("SELECT * FROM appointments WHERE id = ?", (appt_id,)).fetchone()
+        if not appt:
+            return redirect("/calendar" if user["is_admin"] else "/me")
+        if not user["is_admin"] and appt["doctor_id"] != user["id"]:
+            return PlainTextResponse("دسترسی ندارید", status_code=403)
+        if appt["status"] == "cancelled" and not user["is_admin"]:
+            return PlainTextResponse("نوبت لغو شده را نمی‌توانید تغییر دهید.", status_code=400)
+        c.execute(
+            "UPDATE appointments SET status = ?, updated_at = datetime('now') WHERE id = ?",
+            (new_status, appt_id))
+    label = schedule.status_label(new_status)
+    request.session["flash"] = f"وضعیت نوبت: {label}"
+    if user["is_admin"]:
+        return redirect(f"/day/{jalali.jstr(date.fromisoformat(appt['day']))}", request=request)
+    past = request.query_params.get("past") == "1"
+    return redirect("/me?past=1" if past else "/me", request=request)
+
+
+# ---------------------------------------------------------------- working hours & blocked days
+@login_required(admin=True)
+async def schedule_settings(request: Request, user):
+    with db.db() as c:
+        schedule.ensure_clinic_hours(c)
+        if request.method == "POST":
+            form = await form_checked(request)
+            action = str(form.get("action", "")).strip()
+            err = None
+            if action == "clinic_hours":
+                start = jalali.en_digits(str(form.get("start_time", ""))).strip()
+                end = jalali.en_digits(str(form.get("end_time", ""))).strip()
+                if schedule.parse_hhmm(start) is None or schedule.parse_hhmm(end) is None:
+                    err = "ساعت را به صورت HH:MM وارد کنید (مثلاً ۰۸:۰۰)."
+                elif schedule.parse_hhmm(start) >= schedule.parse_hhmm(end):
+                    err = "ساعت پایان باید بعد از ساعت شروع باشد."
+                else:
+                    schedule.set_hours(c, schedule.CLINIC, start, end)
+                    request.session["flash"] = "ساعت کاری کلینیک ذخیره شد."
+            elif action == "staff_hours":
+                try:
+                    doctor_id = int(form.get("doctor_id", "0"))
+                except ValueError:
+                    doctor_id = 0
+                doc = c.execute(
+                    "SELECT id FROM users WHERE id = ? AND is_doctor = 1", (doctor_id,)
+                ).fetchone()
+                if not doc:
+                    err = f"{STAFF_LABEL} را انتخاب کنید."
+                elif form.get("use_default") == "1":
+                    schedule.clear_staff_hours(c, doctor_id)
+                    request.session["flash"] = "بازهٔ اختصاصی برداشته شد؛ از پیش‌فرض کلینیک استفاده می‌شود."
+                else:
+                    start = jalali.en_digits(str(form.get("start_time", ""))).strip()
+                    end = jalali.en_digits(str(form.get("end_time", ""))).strip()
+                    if schedule.parse_hhmm(start) is None or schedule.parse_hhmm(end) is None:
+                        err = "ساعت را به صورت HH:MM وارد کنید."
+                    elif schedule.parse_hhmm(start) >= schedule.parse_hhmm(end):
+                        err = "ساعت پایان باید بعد از ساعت شروع باشد."
+                    else:
+                        schedule.set_hours(c, doctor_id, start, end)
+                        request.session["flash"] = "ساعت کاری همکار ذخیره شد."
+            elif action == "add_blocked":
+                try:
+                    jy, jm, jd = (int(jalali.en_digits(str(form.get(k, "")))) for k in ("jy", "jm", "jd"))
+                    doctor_id = int(form.get("doctor_id") or "0")
+                except ValueError:
+                    err = "تاریخ را کامل کنید."
+                    jy = jm = jd = doctor_id = 0
+                reason = str(form.get("reason", "")).strip()[:200]
+                if not err and not jalali.valid(jy, jm, jd):
+                    err = "تاریخ نامعتبر است."
+                elif not err and doctor_id != 0:
+                    doc = c.execute(
+                        "SELECT id FROM users WHERE id = ? AND is_doctor = 1", (doctor_id,)
+                    ).fetchone()
+                    if not doc:
+                        err = f"{STAFF_LABEL} نامعتبر است."
+                if not err:
+                    day = jalali.to_gregorian(jy, jm, jd).isoformat()
+                    schedule.add_blocked(c, day, doctor_id, reason)
+                    request.session["flash"] = "روز بسته ثبت شد. نوبت‌دهی در این روز همچنان ممکن است؛ هنگام ثبت هشدار نشان داده می‌شود."
+            elif action == "remove_blocked":
+                try:
+                    bid = int(form.get("blocked_id", "0"))
+                except ValueError:
+                    bid = 0
+                schedule.remove_blocked(c, bid)
+                request.session["flash"] = "روز بسته حذف شد."
+            else:
+                err = "درخواست نامعتبر است."
+            if err:
+                clinic = schedule.get_hours(c, schedule.CLINIC)
+                docs = doctors(c)
+                staff_hours = {
+                    r["doctor_id"]: (r["start_time"], r["end_time"])
+                    for r in c.execute(
+                        "SELECT doctor_id, start_time, end_time FROM working_hours WHERE doctor_id != 0"
+                    )
+                }
+                blocked = schedule.list_blocked(c)
+                t = today()
+                ty = jalali.to_jalali(t)[0]
+                return render(request, "schedule.html", user, error=err, status_code=400,
+                              clinic_start=clinic[0], clinic_end=clinic[1],
+                              docs=docs, staff_hours=staff_hours, blocked=blocked,
+                              years=[ty - 1, ty, ty + 1], jy=ty, jm=jalali.to_jalali(t)[1], jd=1)
+            return redirect("/schedule", request=request)
+
+        clinic = schedule.get_hours(c, schedule.CLINIC)
+        docs = doctors(c)
+        staff_hours = {
+            r["doctor_id"]: (r["start_time"], r["end_time"])
+            for r in c.execute(
+                "SELECT doctor_id, start_time, end_time FROM working_hours WHERE doctor_id != 0"
+            )
+        }
+        blocked = schedule.list_blocked(c)
+        t = today()
+        ty, tm, _ = jalali.to_jalali(t)
+    return render(request, "schedule.html", user,
+                  clinic_start=clinic[0], clinic_end=clinic[1],
+                  docs=docs, staff_hours=staff_hours, blocked=blocked,
+                  years=[ty - 1, ty, ty + 1], jy=ty, jm=tm, jd=1)
 
 
 # ---------------------------------------------------------------- coordinator: users
@@ -590,6 +749,8 @@ routes = [
     Route("/appointments/new", appt_new, methods=["GET", "POST"]),
     Route("/appointments/{id:int}/edit", appt_edit, methods=["GET", "POST"]),
     Route("/appointments/{id:int}/cancel", appt_cancel, methods=["POST"]),
+    Route("/appointments/{id:int}/status", appt_set_status, methods=["POST"]),
+    Route("/schedule", schedule_settings, methods=["GET", "POST"]),
     Route("/users", users_list),
     Route("/users/new", user_new, methods=["GET", "POST"]),
     Route("/users/{id:int}/edit", user_edit, methods=["GET", "POST"]),
